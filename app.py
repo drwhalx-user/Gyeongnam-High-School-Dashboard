@@ -35,10 +35,15 @@ section[data-testid="stSidebarContent"] {
     padding-left: 0.5rem !important;
     padding-right: 0.5rem !important;
 }
-[data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stRadio label { font-size: 0.76rem !important; }
-[data-testid="stSidebar"] .stSelectbox label,
-[data-testid="stSidebar"] .stSelectbox div { font-size: 0.75rem !important; }
+/* 메뉴 라디오 항목 - 작게 */
+[data-testid="stSidebar"] .stRadio label p { font-size: 0.72rem !important; }
+/* 필터 selectbox 레이블(시군구, 우선지원등급) - 크게 */
+[data-testid="stSidebar"] .stSelectbox label { font-size: 0.84rem !important; }
+/* selectbox 선택값(전체 등) - 크게 */
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] span { font-size: 0.84rem !important; }
+[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] div { font-size: 0.84rem !important; }
+/* 필터 초기화 버튼 - 작게 */
+[data-testid="stSidebar"] .stButton > button { font-size: 0.70rem !important; }
 
 /* 메인 콘텐츠 패딩 조정 */
 .block-container {
@@ -1734,10 +1739,220 @@ def show_type_analysis(df: pd.DataFrame):
     # ── Row 6: 유형별 우선 검토 학교 (expander) ─────────────────────────────
     _render_type_school_list(df)
 
+    # ── K-means 보조 분석 섹션 ───────────────────────────────────────────────
+    _render_kmeans_section()
+
     st.markdown(
         "<div class='footer-note'>"
         "※ CSI·CDI·우선지원점수 기반 유형화 결과는 정책 검토용 분석 자료이며 "
         "실제 지원 확정 기준이 아닙니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── K-means 보조 분석 섹션 ────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+_KMEANS_PATH = ROOT / "data" / "processed" / "gyeongnam_high_schools_policy_feedback_kmeans.xlsx"
+
+_KMEANS_COLORS = {
+    "수요 대비 공급 취약 군집": "#C0392B",
+    "기초 인프라 보완 군집":    "#9B59B6",
+    "평균 관리 군집":            "#2980B9",
+    "상대적 안정 군집":          "#27AE60",
+}
+
+_KMEANS_INTERP = {
+    "수요 대비 공급 취약 군집": "상담수요 대비 공급 부족 가능성이 높아 인력 배치·Wee클래스·Wee센터 연계 강화 검토가 필요한 군집입니다.",
+    "기초 인프라 보완 군집":    "수요와 공급 모두 낮아 기본 상담 인프라 구축 및 보완이 필요한 군집입니다.",
+    "평균 관리 군집":            "지표가 평균 수준으로, 현 인프라 유지 및 정기 모니터링이 적절한 군집입니다.",
+    "상대적 안정 군집":          "CSI가 높고 우선지원점수가 낮아 현재 지표상 수요 대비 공급이 비교적 안정적인 군집입니다.",
+}
+
+
+@st.cache_data(show_spinner=False)
+def _load_kmeans_data() -> pd.DataFrame | None:
+    if not _KMEANS_PATH.exists():
+        return None
+    try:
+        return pd.read_excel(_KMEANS_PATH, sheet_name="kmeans_school_table",
+                             dtype={"school_code": str})
+    except Exception:
+        return None
+
+
+def _render_kmeans_section():
+    """K-means 보조 분석 섹션 — 유형 분석 탭 하단."""
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
+        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+        "🔬 보조 데이터마이닝 분석: K-means 클러스터링</h2>"
+        "<p style='color:#718096;font-size:0.77rem;margin:0 0 8px 0;'>"
+        "기존 3×3 수요-공급 매트릭스를 유지하면서, 데이터 기반 유사 집단을 탐색하는 보조 분석입니다.</p>",
+        unsafe_allow_html=True,
+    )
+
+    km_df = _load_kmeans_data()
+
+    if km_df is None:
+        st.info(
+            "K-means 분석 결과가 아직 생성되지 않았습니다. "
+            "`scripts/16_kmeans_clustering_school_types_2025.py`를 먼저 실행하세요."
+        )
+        return
+
+    # 유효 데이터만 사용
+    km_valid = km_df[km_df["kmeans_cluster_label"] != "확인 필요"].copy()
+
+    # 설명 배너
+    st.markdown(
+        "<div style='background:#EBF2FF;border-left:3px solid #2980B9;"
+        "padding:8px 12px;border-radius:4px;font-size:0.74rem;color:#2C3E50;"
+        "margin-bottom:14px;'>"
+        "ℹ️ K-means 군집 결과는 실제 지원 확정 기준이 아니라 정책 해석을 보완하는 참고 자료입니다. "
+        "k=4, random_state=42, StandardScaler 표준화 적용."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Row 1: 군집별 학교 수 바 (좌) + CSI-CDI 산점도 (우) ─────────────────
+    bar_col, sc_col = st.columns([1, 1.5], gap="small")
+
+    with bar_col:
+        cnt = (km_valid["kmeans_cluster_label"]
+               .value_counts().reset_index()
+               .rename(columns={"count": "학교수", "kmeans_cluster_label": "군집"}))
+        cnt = cnt.sort_values("학교수", ascending=True)
+        colors = [_KMEANS_COLORS.get(g, "#BDC3C7") for g in cnt["군집"]]
+        fig = go.Figure(go.Bar(
+            x=cnt["학교수"], y=cnt["군집"], orientation="h",
+            marker_color=colors,
+            text=cnt["학교수"], textposition="outside", textfont=dict(size=10),
+        ))
+        fig.update_layout(
+            title=dict(text="K-means 군집별 학교 수", font=dict(size=12, color="#1E3A5F"), x=0),
+            height=300, margin=dict(l=10, r=40, t=40, b=20),
+            xaxis=dict(title="학교 수", tickfont=dict(size=9)),
+            yaxis=dict(tickfont=dict(size=10)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            font=dict(family="Malgun Gothic, sans-serif"),
+        )
+        with st.container(border=True):
+            st.plotly_chart(fig, width="stretch")
+
+    with sc_col:
+        avg_csi = km_valid["CSI"].mean()
+        avg_cdi = km_valid["CDI"].mean()
+        color_map = {g: _KMEANS_COLORS.get(g, "#BDC3C7")
+                     for g in km_valid["kmeans_cluster_label"].unique()}
+        fig2 = px.scatter(
+            km_valid, x="CSI", y="CDI",
+            color="kmeans_cluster_label",
+            color_discrete_map=color_map,
+            custom_data=["school_name", "sigungu", "priority_score", "policy_strategy_group"],
+            labels={"kmeans_cluster_label": "K-means 군집"},
+        )
+        fig2.update_traces(
+            marker=dict(size=8, opacity=0.85, line=dict(width=0.5, color="white")),
+            hovertemplate=(
+                "<b>%{customdata[0]}</b> (%{customdata[1]})<br>"
+                "CSI: %{x:.3f} | CDI: %{y:.3f}<br>"
+                "우선지원점수: %{customdata[2]:.3f}<br>"
+                "정책전략 그룹: %{customdata[3]}<extra></extra>"
+            ),
+        )
+        fig2.add_hline(y=avg_cdi, line_dash="dot", line_color="#718096", line_width=1,
+                       annotation_text=f"평균 CDI {avg_cdi:.3f}",
+                       annotation_position="bottom right",
+                       annotation_font=dict(size=9, color="#718096"))
+        fig2.add_vline(x=avg_csi, line_dash="dot", line_color="#718096", line_width=1,
+                       annotation_text=f"평균 CSI {avg_csi:.3f}",
+                       annotation_position="top left",
+                       annotation_font=dict(size=9, color="#718096"))
+        fig2.update_layout(
+            title=dict(text="K-means 기반 CSI-CDI 군집 분포",
+                       font=dict(size=12, color="#1E3A5F"), x=0),
+            height=300, margin=dict(l=10, r=10, t=40, b=20),
+            xaxis=dict(range=[-0.05, 1.05], title="CSI", tickfont=dict(size=9)),
+            yaxis=dict(range=[-0.05, 1.05], title="CDI", tickfont=dict(size=9)),
+            legend=dict(title="K-means 군집", font=dict(size=9), x=1.01, y=1),
+            plot_bgcolor="white", paper_bgcolor="white",
+            font=dict(family="Malgun Gothic, sans-serif"),
+        )
+        with st.container(border=True):
+            st.plotly_chart(fig2, width="stretch")
+
+    # ── Row 2: 군집별 평균 요약표 ──────────────────────────────────────────
+    agg_cols = {
+        "CSI": "평균CSI", "CDI": "평균CDI",
+        "priority_score": "평균PS",
+        "counseling_staff_supply_score": "상담인력공급",
+        "wee_class_score": "Wee클래스",
+        "wee_center_access_score": "Wee센터접근",
+    }
+    avail = {k: v for k, v in agg_cols.items() if k in km_valid.columns}
+    summary = (km_valid.groupby("kmeans_cluster_label")[list(avail.keys())]
+               .mean().round(3).reset_index()
+               .rename(columns=avail)
+               .rename(columns={"kmeans_cluster_label": "K-means 군집"}))
+    cnt_map = km_valid["kmeans_cluster_label"].value_counts().rename("학교수")
+    summary = summary.merge(cnt_map, left_on="K-means 군집", right_index=True)
+    col_order = ["K-means 군집", "학교수"] + list(avail.values())
+    summary = summary[[c for c in col_order if c in summary.columns]]
+
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "📊 K-means 군집별 평균 지표</div>",
+            unsafe_allow_html=True,
+        )
+        st.dataframe(summary, use_container_width=True, height=200)
+
+    # ── Row 3: 기존 유형화 × K-means 비교표 ──────────────────────────────
+    with st.expander("▶ 기존 3×3 유형 × K-means 군집 비교표"):
+        for cross_col, title in [
+            ("supply_demand_matrix_3x3", "3×3 수요-공급 매트릭스"),
+            ("policy_strategy_group",    "정책전략 그룹"),
+            ("priority_level",           "우선지원등급"),
+        ]:
+            if cross_col not in km_valid.columns:
+                continue
+            ct = pd.crosstab(km_valid["kmeans_cluster_label"], km_valid[cross_col])
+            st.markdown(
+                f"<div style='font-size:0.80rem;font-weight:700;color:#2E5FA3;"
+                f"margin:10px 0 4px 0;'>{title}</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(ct, use_container_width=True)
+
+    # ── Row 4: 군집 해석 카드 ────────────────────────────────────────────
+    labels_in_data = [lbl for lbl in _KMEANS_INTERP if lbl in km_valid["kmeans_cluster_label"].unique()]
+    if labels_in_data:
+        cols = st.columns(len(labels_in_data), gap="small")
+        for col, lbl in zip(cols, labels_in_data):
+            color = _KMEANS_COLORS.get(lbl, "#718096")
+            n = int((km_valid["kmeans_cluster_label"] == lbl).sum())
+            desc = _KMEANS_INTERP.get(lbl, "")
+            with col:
+                st.markdown(
+                    f"<div style='background:white;border-radius:10px;padding:12px;"
+                    f"box-shadow:0 2px 8px rgba(0,0,0,0.07);border-top:3px solid {color};"
+                    f"min-height:140px;'>"
+                    f"<div style='font-size:0.78rem;font-weight:700;color:{color};"
+                    f"margin-bottom:4px;'>{lbl}</div>"
+                    f"<div style='font-size:0.68rem;color:#718096;margin-bottom:6px;'>{n}개교</div>"
+                    f"<div style='font-size:0.72rem;color:#4A5568;line-height:1.5;'>{desc}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+    st.markdown(
+        "<div style='font-size:0.69rem;color:#A0AEC0;margin-top:8px;'>"
+        "※ K-means 군집 라벨은 사후 해석이며 실제 지원 확정 기준이 아닙니다. "
+        "k=4, 9개 변수(StandardScaler 표준화) 적용."
         "</div>",
         unsafe_allow_html=True,
     )
