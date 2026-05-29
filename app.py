@@ -6,6 +6,13 @@ import pathlib
 import warnings
 warnings.filterwarnings("ignore")
 
+# Gemini API 임포트 (없으면 fallback 모드로 동작)
+try:
+    import google.generativeai as genai
+    _GENAI_AVAILABLE = True
+except ImportError:
+    _GENAI_AVAILABLE = False
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -184,6 +191,179 @@ def _hex_to_rgba(hex_color: str, alpha: int = 210) -> list:
 
 PRIORITY_COLORS_PYDECK = {k: _hex_to_rgba(v) for k, v in PRIORITY_COLORS.items()}
 DEFAULT_COLOR_PYDECK   = [149, 165, 166, 200]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── LLM 기반 AI 브리핑 함수 ──────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _get_gemini_key() -> str | None:
+    """Streamlit secrets에서 GEMINI_API_KEY를 읽는다."""
+    try:
+        return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        return None
+
+
+def generate_ai_briefing(prompt: str) -> tuple[str, bool]:
+    """
+    Gemini API를 호출하여 브리핑 텍스트를 생성한다.
+    Returns: (briefing_text, is_ai_generated)
+    """
+    api_key = _get_gemini_key()
+
+    if not api_key or not _GENAI_AVAILABLE:
+        return None, False
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            generation_config=genai.GenerationConfig(temperature=0.2, max_output_tokens=1024),
+        )
+        response = model.generate_content(prompt)
+        text = response.text.strip() if response.text else ""
+        if not text:
+            return None, False
+        return text, True
+    except Exception as e:
+        return f"[API 오류: {e}]", False
+
+
+def generate_rule_based_school_briefing(row) -> str:
+    """API 없을 때 학교 규칙 기반 브리핑 생성."""
+    name   = row.get("school_name", "해당 학교")
+    csi    = row.get("CSI", "N/A")
+    cdi    = row.get("CDI", "N/A")
+    ps     = row.get("priority_score", "N/A")
+    level  = row.get("priority_level", "N/A")
+    group  = row.get("policy_strategy_group", "N/A")
+    p1     = row.get("recommended_policy_1", "N/A")
+    p2     = row.get("recommended_policy_2", "N/A")
+    p3     = row.get("recommended_policy_3", "N/A")
+    reason = row.get("recommended_policy_reason", "")
+
+    try:
+        csi_v = float(csi); cdi_v = float(cdi); ps_v = float(ps)
+        supply_state = "공급 수준이 낮은 편" if csi_v < 0.4 else ("공급이 비교적 확보된 상태" if csi_v >= 0.7 else "공급이 보통 수준")
+        demand_state = "수요가 높은 편" if cdi_v >= 0.5 else "수요가 낮거나 보통 수준"
+        ps_interp = f"우선지원점수({ps_v:.3f})는 {'공급 부족 우려가 있는 수준' if ps_v > 0 else '상대적으로 안정적인 수준'}이다."
+    except Exception:
+        supply_state = "공급 수준 확인 필요"; demand_state = "수요 수준 확인 필요"
+        ps_interp = f"우선지원점수: {ps}"
+
+    briefing = (
+        f"**1. 종합 진단**\n"
+        f"{name}은(는) {supply_state}이며, {demand_state}으로 분석된다. "
+        f"{ps_interp} 정책전략 그룹은 '{group}'으로 분류되어 있으며, 우선지원등급은 '{level}'이다.\n\n"
+        f"**2. 추천 정책**\n"
+        f"1순위: {p1}\n2순위: {p2}\n3순위: {p3}\n\n"
+        f"**3. 판단 근거**\n{reason if reason else '해당 학교의 지표 패턴 기반으로 산출된 결과이다.'}\n\n"
+        f"**4. 유의사항**\n"
+        f"본 브리핑은 지수 산식 기반 정책 검토용 참고 자료이며, 실제 지원 확정 기준이 아니다. "
+        f"최종 의사결정 시 현장 의견, 예산, 인력 상황을 함께 검토해야 한다."
+    )
+    return briefing
+
+
+def generate_rule_based_optimization_briefing(summary: dict) -> str:
+    """API 없을 때 최적화 결과 규칙 기반 브리핑 생성."""
+    n_sch    = summary.get("n_schools", 0)
+    scope    = summary.get("scope", "전체")
+    n_a      = summary.get("n_a", 0); n_b = summary.get("n_b", 0); n_c = summary.get("n_c", 0)
+    csi_b    = summary.get("avg_csi_before", 0); csi_a = summary.get("avg_csi_after", 0)
+    ps_b     = summary.get("avg_ps_before", 0);  ps_a  = summary.get("avg_ps_after", 0)
+    best_sch = summary.get("best_school", "-")
+
+    briefing = (
+        f"**1. 시뮬레이션 조건**\n"
+        f"대상 범위: {scope} | 자원: 전문상담교사 {n_a}교, Wee클래스 {n_b}교, Wee센터 {n_c}교\n\n"
+        f"**2. 주요 결과**\n"
+        f"총 {n_sch}개교가 우선배치 추천 대상으로 선정되었다. "
+        f"평균 CSI는 {csi_b:.3f}에서 {csi_a:.3f}로, "
+        f"평균 우선지원점수는 {ps_b:.3f}에서 {ps_a:.3f}로 변화하는 것으로 나타났다.\n\n"
+        f"**3. 정책적 시사점**\n"
+        f"개선효과가 가장 큰 학교는 '{best_sch}'이며, 해당 학교에 대한 우선 검토가 필요하다. "
+        f"입력한 자원 조건 내에서 상담공급지수 개선을 통해 수요 대비 공급 부족 완화 효과가 "
+        f"시뮬레이션상 확인되었다.\n\n"
+        f"**4. 한계 및 추가 검토 사항**\n"
+        f"본 결과는 현재 지수 산식 기반 가상 시뮬레이션이며 실제 정책 효과를 보장하지 않는다. "
+        f"탐욕 알고리즘(Greedy) 기반으로 전역 최적해를 보장하지 않으며, "
+        f"실제 배치 결정 시 예산·인력·현장 의견을 함께 고려해야 한다."
+    )
+    return briefing
+
+
+def _build_school_prompt(row) -> str:
+    """학교 검색 탭용 LLM 프롬프트 생성."""
+    def _v(col, fmt=".3f"):
+        val = row.get(col, "N/A")
+        try:
+            return f"{float(val):{fmt}}" if val != "N/A" else "N/A"
+        except Exception:
+            return str(val)
+
+    return f"""너는 교육 공공데이터 기반 정책 분석 보조 도구이다.
+아래 학교의 정량 지표를 바탕으로 정책 담당자용 브리핑을 작성하라.
+새로운 사실을 만들지 말고, 제공된 지표만 근거로 해석하라.
+실제 지원 확정처럼 표현하지 말고 정책 검토용 분석 결과로 표현하라.
+"검토할 수 있다", "우선 검토 대상이다", "추가 확인이 필요하다" 표현을 사용하라.
+한국어로 작성하고, 400자 이내로 간결하게 작성하라.
+
+[학교 정보]
+학교명: {row.get('school_name', 'N/A')} / 시군구: {row.get('sigungu', 'N/A')}
+CSI(상담공급지수): {_v('CSI')} / CDI(상담수요지수): {_v('CDI')}
+우선지원점수: {_v('priority_score')} / 우선지원등급: {row.get('priority_level', 'N/A')}
+정책전략 그룹: {row.get('policy_strategy_group', 'N/A')}
+3x3 유형: {row.get('supply_demand_matrix_3x3', 'N/A')}
+K-means 군집: {row.get('kmeans_cluster_label', 'N/A')}
+
+[CSI 구성 지표]
+상담인력공급: {_v('counseling_staff_supply_score')} / Wee클래스: {_v('wee_class_score')} / Wee센터접근성: {_v('wee_center_access_score')}
+
+[CDI 구성 지표]
+수요규모: {_v('demand_size_score')} / 상담이용률: {_v('counseling_use_score')} / 학교폭력위험: {_v('school_violence_risk_score')}
+
+[AI 추천 정책]
+1순위: {row.get('recommended_policy_1', 'N/A')} ({_v('recommended_policy_1_score')})
+2순위: {row.get('recommended_policy_2', 'N/A')} ({_v('recommended_policy_2_score')})
+3순위: {row.get('recommended_policy_3', 'N/A')} ({_v('recommended_policy_3_score')})
+추천 근거: {row.get('recommended_policy_reason', 'N/A')}
+
+[작성 형식 — 각 항목 2~3문장]
+1. 종합 진단
+2. 주요 근거
+3. 추천 정책 방향
+4. 유의사항"""
+
+
+def _build_optimization_prompt(summary: dict) -> str:
+    """시뮬레이션 탭용 LLM 프롬프트 생성."""
+    top5 = summary.get("top5_schools", [])
+    top5_str = "\n".join([f"  - {s}" for s in top5]) if top5 else "  - 해당 없음"
+    return f"""너는 교육청 정책 담당자를 위한 AI 브리핑 보조 도구이다.
+아래 최적화 시뮬레이션 결과를 바탕으로 정책 보고서에 사용할 수 있는 요약문을 작성하라.
+새로운 수치나 사실을 만들지 말고, 제공된 값만 사용하라.
+본 결과는 실제 정책 효과 예측이 아니라 지수 산식 기반 가상 시뮬레이션이라는 점을 반드시 포함하라.
+한국어로 작성하고, 400자 이내로 간결하게 작성하라.
+
+[자원 조건]
+대상 범위: {summary.get('scope', 'N/A')}
+전문상담교사 배치: {summary.get('n_a', 0)}개교 / Wee클래스 신설: {summary.get('n_b', 0)}개교 / Wee센터 연계: {summary.get('n_c', 0)}개교
+
+[최적화 결과]
+추천 학교 수: {summary.get('n_schools', 0)}개교
+평균 CSI 변화: {summary.get('avg_csi_before', 0):.3f} → {summary.get('avg_csi_after', 0):.3f}
+평균 우선지원점수 변화: {summary.get('avg_ps_before', 0):.3f} → {summary.get('avg_ps_after', 0):.3f}
+PS>0 학교 변화: {summary.get('n_pos_before', 0)}개 → {summary.get('n_pos_after', 0)}개
+개선효과 상위 학교:
+{top5_str}
+
+[작성 형식 — 각 항목 2~3문장]
+1. 시뮬레이션 조건
+2. 주요 결과
+3. 정책적 시사점
+4. 한계 및 추가 검토 사항"""
 
 
 # ── 4. 데이터 로드 ─────────────────────────────────────────────────────────────
@@ -1219,6 +1399,7 @@ def show_school_search(df: pd.DataFrame):
     with right_col:
         _render_policy_feedback(row)
         _render_policy_fit_card(_row_scores)
+        _render_school_ai_briefing(row if _row_scores is None else _row_scores)
         _render_school_detail_table(row)
 
     # ── footer ────────────────────────────────────────────────────────────────
@@ -1509,6 +1690,47 @@ def _render_school_avg_comparison(row: pd.Series, df_all: pd.DataFrame):
 
 
 # ── 세부 지표 테이블 ──────────────────────────────────────────────────────────
+def _render_school_ai_briefing(row):
+    """학교 검색 탭 — AI 정책 브리핑 생성 UI."""
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "🤖 AI 정책 브리핑</div>"
+            "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
+            "기존 분석 결과를 바탕으로 LLM이 자연어 브리핑을 생성합니다. "
+            "LLM은 새로운 판단을 하지 않으며, 정책 검토용 참고 자료입니다.</div>",
+            unsafe_allow_html=True,
+        )
+        btn_key = f"school_briefing_{row.get('school_code', 'x')}"
+        if st.button("🤖 AI 브리핑 생성", key=btn_key):
+            with st.spinner("AI 브리핑 생성 중..."):
+                api_key = _get_gemini_key()
+                if not api_key:
+                    st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
+                    briefing = generate_rule_based_school_briefing(row)
+                    is_ai = False
+                else:
+                    prompt  = _build_school_prompt(row)
+                    briefing, is_ai = generate_ai_briefing(prompt)
+                    if not briefing or not is_ai:
+                        st.caption("⚠️ AI 브리핑 생성 중 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
+                        briefing = generate_rule_based_school_briefing(row)
+
+            label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
+            st.markdown(
+                f"<div style='background:#F7FAFC;border-left:3px solid #2E5FA3;"
+                f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
+                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
+                f"<div style='font-size:0.76rem;color:#2D3748;line-height:1.7;'>"
+                f"{briefing.replace(chr(10), '<br>')}</div>"
+                f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
+                f"※ 본 브리핑은 정책 검토용 참고 자료이며 실제 지원 확정 기준이 아닙니다.</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
 def _render_policy_fit_card(score_row):
     """AI 추천 정책 카드 + 6개 적합도 수평 바 차트."""
     if score_row is None:
@@ -3059,6 +3281,54 @@ def show_optimization_sim():
             st.dataframe(show_cand.reset_index(drop=True),
                          use_container_width=True, height=200)
 
+    # ── AI 최적화 결과 브리핑 ─────────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:16px 0 12px;'>"
+        "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+        "margin-bottom:4px;'>🤖 AI 최적화 결과 브리핑</div>"
+        "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
+        "최적화 시뮬레이션 결과를 LLM이 자연어 보고서로 요약합니다.</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("📋 최적화 결과 브리핑 생성", key="opt_briefing_btn"):
+        top5_names = (combined.head(5)["school_name"].tolist()
+                      if "school_name" in combined.columns else [])
+        opt_summary = {
+            "scope": scope, "n_a": n_a, "n_b": n_b, "n_c": n_c,
+            "n_schools": n_sch,
+            "avg_csi_before": avg_csi_b, "avg_csi_after": avg_csi_a,
+            "avg_ps_before": avg_ps_b,   "avg_ps_after": avg_ps_a,
+            "n_pos_before": n_pos_b,     "n_pos_after": n_pos_a,
+            "best_school": combined.iloc[0]["school_name"] if not combined.empty else "-",
+            "top5_schools": [f"{r['school_name']}({r['sigungu']}) — 개선폭 {r['combined_priority_improvement']:.3f}"
+                             for _, r in combined.head(5).iterrows()],
+        }
+        with st.spinner("AI 브리핑 생성 중..."):
+            api_key = _get_gemini_key()
+            if not api_key:
+                st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
+                briefing = generate_rule_based_optimization_briefing(opt_summary)
+                is_ai = False
+            else:
+                prompt  = _build_optimization_prompt(opt_summary)
+                briefing, is_ai = generate_ai_briefing(prompt)
+                if not briefing or not is_ai:
+                    st.caption("⚠️ AI 브리핑 생성 중 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
+                    briefing = generate_rule_based_optimization_briefing(opt_summary)
+
+        label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
+        st.markdown(
+            f"<div style='background:#F7FAFC;border-left:3px solid #9B59B6;"
+            f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
+            f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
+            f"<div style='font-size:0.76rem;color:#2D3748;line-height:1.7;'>"
+            f"{briefing.replace(chr(10), '<br>')}</div>"
+            f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
+            f"※ 본 브리핑은 지수 산식 기반 가상 시뮬레이션 결과이며 실제 정책 배치 확정이 아닙니다.</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ── 학교별 시뮬레이션 함수 ────────────────────────────────────────────────────
@@ -4163,6 +4433,48 @@ def show_data_description(df: pd.DataFrame):
                     f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
                     f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>"
                     f"{lt}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── 외부 LLM AI 브리핑 설명 섹션 ────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+            "🤖 16. 외부 LLM 기반 AI 브리핑 기능</div>",
+            unsafe_allow_html=True,
+        )
+        llm_cols = st.columns(2, gap="small")
+        with llm_cols[0]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
+                "margin-bottom:6px;'>기능 설명</div>"
+                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
+                "· 본 대시보드는 <b>Google Gemini API</b>를 활용하여 학교별 분석 결과와 "
+                "최적화 시뮬레이션 결과를 자연어 브리핑으로 변환한다.<br>"
+                "· LLM은 <b>새로운 점수를 계산하거나 실제 지원 여부를 판단하지 않는다.</b><br>"
+                "· LLM은 이미 계산된 정량 지표(CSI·CDI·PS·정책별 적합도·최적화 결과)를 "
+                "바탕으로 자연어 설명문을 생성하는 <b>해석 보조 도구</b>이다.<br>"
+                "· API 호출 실패 시 규칙 기반 브리핑으로 자동 대체된다.<br>"
+                "· 민감한 개인정보나 API 키는 LLM에 전달하지 않는다."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with llm_cols[1]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
+                "margin-bottom:6px;'>유의사항</div>",
+                unsafe_allow_html=True,
+            )
+            for item in [
+                "LLM이 생성한 문장은 정책 확정 근거가 아닌 참고 자료임",
+                "API 키는 Streamlit secrets를 통해 관리하며, 코드에 직접 기재하지 않음",
+                "LLM 호출은 버튼 클릭 시에만 수행 (앱 로딩 시 자동 호출 없음)",
+                "결과는 정책 검토용이며 최종 의사결정 시 현장 의견·예산·인력 상황을 함께 고려해야 함",
+            ]:
+                st.markdown(
+                    f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
+                    f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>{item}</div>",
                     unsafe_allow_html=True,
                 )
 
