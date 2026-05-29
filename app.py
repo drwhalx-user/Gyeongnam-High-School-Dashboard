@@ -2610,7 +2610,17 @@ def show_simulation(df: pd.DataFrame):
     with int_col:
         _render_sim_interpretation(sim_df, target_sel, apply_staff, apply_wee, apply_center, apply_prog)
 
-    # ── 유의사항 ─────────────────────────────────────────────────────────────
+    # ── AI 기반 우선배치 최적화 시뮬레이션 섹션 ─────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
+        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+        "🏆 AI 기반 우선배치 최적화 시뮬레이션</h2>"
+        "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
+        "제한된 상담지원 자원을 어느 학교에 우선 적용할지 자동 추천합니다.</p>",
+        unsafe_allow_html=True,
+    )
+    show_optimization_sim()
+
     # ── 학교별 시뮬레이션 섹션 ──────────────────────────────────────────────
     st.markdown(
         "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
@@ -2631,6 +2641,441 @@ def show_simulation(df: pd.DataFrame):
         "</div>",
         unsafe_allow_html=True,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── AI 기반 우선배치 최적화 시뮬레이션 함수 ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _load_opt_data():
+    """최적화용 데이터 파일 우선순위 로드."""
+    candidates = [
+        (_SCORES_PATH,  "policy_recommendation_table"),
+        (_KMEANS_PATH,  "kmeans_school_table"),
+        (DATA_PATH,     SHEET),
+    ]
+    for path, sheet in candidates:
+        if not path.exists():
+            continue
+        try:
+            xl = pd.ExcelFile(path)
+            s  = sheet if sheet in xl.sheet_names else xl.sheet_names[0]
+            return pd.read_excel(path, sheet_name=s, dtype={"school_code": str})
+        except Exception:
+            continue
+    return None
+
+
+def _run_greedy_opt(df: pd.DataFrame, n_a: int, n_b: int, n_c: int, scope: str):
+    """Greedy Optimization — 정책별 priority_improvement 상위 N개 선택."""
+
+    # 대상 범위 필터
+    grp_col = "policy_strategy_group"
+    scope_map = {
+        "전체 학교":              pd.Series([True] * len(df), index=df.index),
+        "최우선 개입형 학교":     df.get(grp_col, pd.Series()) == "최우선 개입형",
+        "우선 보완형 학교":       df.get(grp_col, pd.Series()) == "우선 보완형",
+        "인력 취약형 학교":       df.get(grp_col, pd.Series()) == "인력 취약형",
+        "접근성 보완형 학교":     df.get(grp_col, pd.Series()) == "접근성 보완형",
+        "우선지원점수 상위 20개교": df["priority_score"].rank(ascending=False) <= 20,
+        "priority_score > 0 학교": df["priority_score"] > 0,
+    }
+    mask = scope_map.get(scope, pd.Series([True] * len(df), index=df.index))
+    df_scope = df[mask].copy().reset_index(drop=True)
+
+    # 필수 컬럼 결측 제거
+    req = ["counseling_staff_supply_score", "wee_class_score",
+           "wee_center_access_score", "CSI", "CDI", "priority_score"]
+    df_valid = df_scope.dropna(subset=req).copy()
+
+    def _apply(row, policy: str):
+        s, w, c = (float(row["counseling_staff_supply_score"]),
+                   float(row["wee_class_score"]),
+                   float(row["wee_center_access_score"]))
+        if policy == "A":
+            s = 0.4 if s < 0.4 else (0.7 if s < 0.7 else s)
+        elif policy == "B":
+            w = 1.0
+        elif policy == "C":
+            c = 0.7 if c < 0.7 else c
+        after_csi = (s + w + c) / 3
+        after_ps  = float(row["CDI"]) - after_csi
+        return after_csi, after_ps
+
+    def _build_candidates(policy: str, condition):
+        cands = df_valid[condition(df_valid)].copy()
+        results = []
+        for _, row in cands.iterrows():
+            after_csi, after_ps = _apply(row, policy)
+            imp = float(row["priority_score"]) - after_ps
+            if imp > 0:
+                results.append({
+                    "school_code":        row.get("school_code", ""),
+                    "school_name":        row.get("school_name", ""),
+                    "sigungu":            row.get("sigungu", ""),
+                    "priority_level":     row.get("priority_level", ""),
+                    "policy_strategy_group": row.get("policy_strategy_group", ""),
+                    "supply_demand_matrix_3x3": row.get("supply_demand_matrix_3x3", ""),
+                    "recommended_policy_1": row.get("recommended_policy_1", ""),
+                    "recommended_policy_1_score": row.get("recommended_policy_1_score", ""),
+                    "policy_name":        {"A": "전문상담교사 배치 또는 순회상담 연계",
+                                           "B": "Wee클래스 신설 또는 운영 보완",
+                                           "C": "Wee센터 연계 강화"}[policy],
+                    "before_CSI":         round(float(row["CSI"]), 3),
+                    "after_CSI":          round(after_csi, 3),
+                    "csi_improvement":    round(after_csi - float(row["CSI"]), 3),
+                    "before_priority_score": round(float(row["priority_score"]), 3),
+                    "after_priority_score":  round(after_ps, 3),
+                    "priority_improvement":  round(imp, 3),
+                })
+        return (pd.DataFrame(results)
+                .sort_values("priority_improvement", ascending=False)
+                .reset_index(drop=True))
+
+    cand_a = _build_candidates("A", lambda d: d["counseling_staff_supply_score"] < 0.7)
+    cand_b = _build_candidates("B", lambda d: d["wee_class_score"] < 1.0)
+    cand_c = _build_candidates("C", lambda d: d["wee_center_access_score"] < 0.7)
+
+    sel_a = cand_a.head(n_a) if n_a > 0 else cand_a.iloc[0:0]
+    sel_b = cand_b.head(n_b) if n_b > 0 else cand_b.iloc[0:0]
+    sel_c = cand_c.head(n_c) if n_c > 0 else cand_c.iloc[0:0]
+
+    # 종합 적용 계산 (학교별 묶기)
+    all_sel = pd.concat([sel_a, sel_b, sel_c], ignore_index=True)
+    if all_sel.empty:
+        return {"all": all_sel, "a": sel_a, "b": sel_b, "c": sel_c,
+                "combined": pd.DataFrame(), "n_schools": 0}
+
+    combined_rows = []
+    for code, grp in all_sel.groupby("school_code"):
+        base_row = df_valid[df_valid["school_code"] == code]
+        if base_row.empty:
+            continue
+        base = base_row.iloc[0]
+        s = float(base["counseling_staff_supply_score"])
+        w = float(base["wee_class_score"])
+        c = float(base["wee_center_access_score"])
+        policies_applied = grp["policy_name"].tolist()
+        if "전문상담교사 배치 또는 순회상담 연계" in policies_applied:
+            s = 0.4 if s < 0.4 else (0.7 if s < 0.7 else s)
+        if "Wee클래스 신설 또는 운영 보완" in policies_applied:
+            w = 1.0
+        if "Wee센터 연계 강화" in policies_applied:
+            c = 0.7 if c < 0.7 else c
+        comb_csi = (s + w + c) / 3
+        comb_ps  = float(base["CDI"]) - comb_csi
+        combined_rows.append({
+            "school_code":        code,
+            "school_name":        base.get("school_name", ""),
+            "sigungu":            base.get("sigungu", ""),
+            "priority_level":     base.get("priority_level", ""),
+            "policy_strategy_group": base.get("policy_strategy_group", ""),
+            "supply_demand_matrix_3x3": base.get("supply_demand_matrix_3x3", ""),
+            "recommended_policy_1": base.get("recommended_policy_1", ""),
+            "recommended_policy_1_score": base.get("recommended_policy_1_score", ""),
+            "applied_policies":   " / ".join(policies_applied),
+            "before_CSI":         round(float(base["CSI"]), 3),
+            "combined_after_CSI": round(comb_csi, 3),
+            "combined_csi_improvement": round(comb_csi - float(base["CSI"]), 3),
+            "before_priority_score":    round(float(base["priority_score"]), 3),
+            "combined_after_priority_score": round(comb_ps, 3),
+            "combined_priority_improvement": round(float(base["priority_score"]) - comb_ps, 3),
+        })
+
+    combined = (pd.DataFrame(combined_rows)
+                .sort_values("combined_priority_improvement", ascending=False)
+                .reset_index(drop=True))
+
+    return {"all": all_sel, "a": sel_a, "b": sel_b, "c": sel_c,
+            "combined": combined, "n_schools": len(combined)}
+
+
+def show_optimization_sim():
+    """AI 기반 우선배치 최적화 시뮬레이션 메인."""
+    st.markdown(
+        "<div style='background:#FEF9E7;border-left:3px solid #F39C12;"
+        "padding:7px 12px;border-radius:4px;font-size:0.74rem;color:#7D6608;"
+        "margin-bottom:12px;'>"
+        "⚠️ 본 결과는 실제 정책 효과 예측이나 배치 확정이 아니라, "
+        "현재 지수 산식에 기반한 가상 의사결정 지원 결과입니다. "
+        "탐욕 알고리즘(Greedy) 기반으로 개선효과 순으로 추천합니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    df_opt = _load_opt_data()
+    if df_opt is None:
+        st.warning("최적화에 필요한 데이터 파일을 찾을 수 없습니다.")
+        return
+
+    # ── 자원 입력 UI ──────────────────────────────────────────────────────
+    ui1, ui2 = st.columns([1, 1], gap="small")
+    with ui1:
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:0.84rem;font-weight:700;color:#1E3A5F;"
+                "margin-bottom:8px;'>⚙️ 자원 수 입력</div>",
+                unsafe_allow_html=True,
+            )
+            n_a = st.number_input("전문상담교사 배치 가능 학교 수", 0, 50, 5, key="opt_na")
+            n_b = st.number_input("Wee클래스 신설 가능 학교 수",    0, 50, 3, key="opt_nb")
+            n_c = st.number_input("Wee센터 연계 강화 가능 학교 수", 0, 100, 10, key="opt_nc")
+
+    with ui2:
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:0.84rem;font-weight:700;color:#1E3A5F;"
+                "margin-bottom:8px;'>🎯 최적화 대상 범위</div>",
+                unsafe_allow_html=True,
+            )
+            scope = st.selectbox(
+                "대상 선택", [
+                    "전체 학교", "최우선 개입형 학교", "우선 보완형 학교",
+                    "인력 취약형 학교", "접근성 보완형 학교",
+                    "우선지원점수 상위 20개교", "priority_score > 0 학교",
+                ], label_visibility="collapsed", key="opt_scope"
+            )
+            st.markdown(
+                "<div style='font-size:0.70rem;color:#A0AEC0;margin-top:8px;'>"
+                "· 각 정책별 개선효과 상위 N개교 자동 선택<br>"
+                "· 한 학교에 복수 정책 적용 가능 → 종합 효과 계산<br>"
+                "· 개선효과 0 이하 학교는 선택 제외</div>",
+                unsafe_allow_html=True,
+            )
+
+    if n_a + n_b + n_c == 0:
+        st.info("적용 가능한 자원이 0개입니다. 자원 수를 1 이상 입력하세요.")
+        return
+
+    # ── 최적화 실행 ───────────────────────────────────────────────────────
+    result = _run_greedy_opt(df_opt, n_a, n_b, n_c, scope)
+    combined = result["combined"]
+
+    if combined.empty:
+        st.info("현재 조건에서 우선지원점수 개선효과가 있는 추천 대상이 없습니다.")
+        return
+
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+
+    # ── KPI 카드 5개 ──────────────────────────────────────────────────────
+    n_sch    = len(combined)
+    avg_csi_b = combined["before_CSI"].mean()
+    avg_csi_a = combined["combined_after_CSI"].mean()
+    avg_ps_b  = combined["before_priority_score"].mean()
+    avg_ps_a  = combined["combined_after_priority_score"].mean()
+    total_imp = combined["combined_priority_improvement"].sum()
+    n_pos_b   = int((combined["before_priority_score"] > 0).sum())
+    n_pos_a   = int((combined["combined_after_priority_score"] > 0).sum())
+
+    k1,k2,k3,k4,k5 = st.columns(5, gap="small")
+    kpi_specs = [
+        (k1, "#2E5FA3", "추천 학교 수",          f"{n_sch}개교",    "자원 조건 내 선정"),
+        (k2, "#1ABC9C", "평균 CSI 변화",
+         f"{avg_csi_b:.3f} → {avg_csi_a:.3f}",
+         f"▲ +{avg_csi_a-avg_csi_b:.3f}"),
+        (k3, "#E67E22", "평균 우선지원점수 변화",
+         f"{avg_ps_b:.3f} → {avg_ps_a:.3f}",
+         f"▼ {avg_ps_a-avg_ps_b:.3f}"),
+        (k4, "#9B59B6", "총 개선효과 합계",       f"{total_imp:.3f}", "priority_improvement 합"),
+        (k5, "#C0392B", "PS>0 학교 변화",
+         f"{n_pos_b}개 → {n_pos_a}개",
+         f"감소 {n_pos_b-n_pos_a}개교"),
+    ]
+    for col, color, label, value, sub in kpi_specs:
+        with col:
+            st.markdown(
+                f"<div style='background:white;border-radius:10px;padding:12px 10px;"
+                f"box-shadow:0 2px 8px rgba(0,0,0,0.08);border-top:3px solid {color};"
+                f"min-height:95px;'>"
+                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:4px;'>{label}</div>"
+                f"<div style='font-size:0.95rem;font-weight:700;color:{color};"
+                f"line-height:1.3;'>{value}</div>"
+                f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:2px;'>{sub}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+
+    # ── Row: 비교 바 (좌) + 정책별 학교 수 바 (우) ───────────────────────
+    chart1, chart2 = st.columns([1.5, 1], gap="small")
+
+    with chart1:
+        fig1 = go.Figure()
+        metrics = ["CSI", "우선지원점수"]
+        before  = [avg_csi_b, avg_ps_b]
+        after   = [avg_csi_a, avg_ps_a]
+        fig1.add_trace(go.Bar(name="적용 전", x=metrics, y=before,
+                              marker_color="rgba(149,165,166,0.7)",
+                              text=[f"{v:.3f}" for v in before],
+                              textposition="outside", textfont=dict(size=10)))
+        fig1.add_trace(go.Bar(name="적용 후", x=metrics, y=after,
+                              marker_color="#2E5FA3",
+                              text=[f"{v:.3f}" for v in after],
+                              textposition="outside", textfont=dict(size=10)))
+        y_min = min(min(before), min(after)) - 0.05
+        y_max = max(max(before), max(after)) + 0.12
+        fig1.update_layout(
+            title=dict(text="정책 적용 전후 평균 지수 변화",
+                       font=dict(size=12, color="#1E3A5F"), x=0),
+            barmode="group", height=280,
+            margin=dict(l=10, r=10, t=40, b=30),
+            yaxis=dict(range=[y_min, y_max], tickfont=dict(size=9),
+                       zeroline=True, zerolinecolor="#BDC3C7"),
+            legend=dict(orientation="h", y=-0.2, x=0, font=dict(size=9)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            font=dict(family="Malgun Gothic, sans-serif"),
+        )
+        with st.container(border=True):
+            st.plotly_chart(fig1, width="stretch")
+
+    with chart2:
+        pol_names = ["전문상담교사 배치", "Wee클래스 신설", "Wee센터 연계"]
+        pol_counts = [len(result["a"]), len(result["b"]), len(result["c"])]
+        fig2 = go.Figure(go.Bar(
+            x=pol_counts, y=pol_names, orientation="h",
+            marker_color=["#C0392B","#E67E22","#2980B9"],
+            text=pol_counts, textposition="outside", textfont=dict(size=11),
+        ))
+        fig2.update_layout(
+            title=dict(text="정책별 추천 학교 수",
+                       font=dict(size=12, color="#1E3A5F"), x=0),
+            height=280, margin=dict(l=10, r=40, t=40, b=30),
+            xaxis=dict(title="학교 수", tickfont=dict(size=9)),
+            yaxis=dict(tickfont=dict(size=10)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            font=dict(family="Malgun Gothic, sans-serif"),
+        )
+        with st.container(border=True):
+            st.plotly_chart(fig2, width="stretch")
+
+    # ── AI 우선배치 추천 결과표 ───────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "🏆 AI 우선배치 추천 결과 (개선효과 내림차순)</div>",
+            unsafe_allow_html=True,
+        )
+        disp = combined.copy()
+        disp.insert(0, "순위", range(1, len(disp)+1))
+        disp = disp.rename(columns={
+            "school_name": "학교명", "sigungu": "시군구",
+            "applied_policies": "적용 추천 정책",
+            "before_CSI": "기존 CSI", "combined_after_CSI": "적용 후 CSI",
+            "combined_csi_improvement": "CSI 개선폭",
+            "before_priority_score": "기존 PS",
+            "combined_after_priority_score": "적용 후 PS",
+            "combined_priority_improvement": "PS 개선폭",
+            "priority_level": "기존 등급",
+            "policy_strategy_group": "정책전략 그룹",
+            "supply_demand_matrix_3x3": "3x3 유형",
+            "recommended_policy_1": "AI 추천 1순위",
+        })
+        show_cols = ["순위","학교명","시군구","적용 추천 정책",
+                     "기존 CSI","적용 후 CSI","CSI 개선폭",
+                     "기존 PS","적용 후 PS","PS 개선폭",
+                     "기존 등급","정책전략 그룹","3x3 유형","AI 추천 1순위"]
+        st.dataframe(disp[[c for c in show_cols if c in disp.columns]],
+                     use_container_width=True, height=300)
+
+        # 다운로드
+        csv_bytes = combined.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+        st.download_button(
+            "⬇️ 최적화 추천 결과 다운로드 (CSV)",
+            data=csv_bytes,
+            file_name="policy_optimization_recommendations_2025.csv",
+            mime="text/csv",
+        )
+
+    # ── TOP10 개선효과 바 + 해석 박스 ────────────────────────────────────
+    bot1, bot2 = st.columns([1, 1], gap="small")
+
+    with bot1:
+        top10 = combined.nlargest(10, "combined_priority_improvement")
+        fig3  = go.Figure(go.Bar(
+            x=top10["combined_priority_improvement"],
+            y=top10["school_name"],
+            orientation="h",
+            marker_color="#2E5FA3",
+            text=[f"{v:.3f}" for v in top10["combined_priority_improvement"]],
+            textposition="outside", textfont=dict(size=9),
+        ))
+        fig3.update_layout(
+            title=dict(text="우선지원점수 개선효과 상위 학교 (TOP 10)",
+                       font=dict(size=12, color="#1E3A5F"), x=0),
+            height=340, margin=dict(l=10, r=50, t=40, b=20),
+            xaxis=dict(title="개선폭 (클수록 효과 큼)", tickfont=dict(size=9)),
+            yaxis=dict(tickfont=dict(size=10)),
+            plot_bgcolor="white", paper_bgcolor="white",
+            font=dict(family="Malgun Gothic, sans-serif"),
+        )
+        with st.container(border=True):
+            st.plotly_chart(fig3, width="stretch")
+
+    with bot2:
+        best_sch  = combined.iloc[0]["school_name"] if not combined.empty else "-"
+        best_imp  = combined.iloc[0]["combined_priority_improvement"] if not combined.empty else 0
+        items_interp = [
+            ("#2E5FA3",
+             f"대상: <b>{scope}</b> | 자원: 전문상담교사 {n_a}교 / Wee클래스 {n_b}교 / Wee센터 {n_c}교"),
+            ("#1ABC9C",
+             f"추천 학교: <b>{n_sch}개교</b> | 평균 CSI: "
+             f"<b>{avg_csi_b:.3f}</b> → <b>{avg_csi_a:.3f}</b> "
+             f"(+{avg_csi_a-avg_csi_b:.3f})"),
+            ("#E67E22",
+             f"평균 우선지원점수: <b>{avg_ps_b:.3f}</b> → <b>{avg_ps_a:.3f}</b> "
+             f"({avg_ps_a-avg_ps_b:.3f}) — 수요 대비 공급 부족 완화 방향"),
+            ("#9B59B6",
+             f"최대 개선 학교: <b>{best_sch}</b> (개선폭 {best_imp:.3f})"),
+            ("#F39C12",
+             "본 결과는 현재 지수 산식 기반 가상 시뮬레이션이며 실제 정책 배치 확정이 아닙니다. "
+             "전역 최적해가 아닌 탐욕 알고리즘(Greedy) 기반 추천입니다."),
+        ]
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+                "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+                "💡 최적화 결과 해석</div>",
+                unsafe_allow_html=True,
+            )
+            for color, text in items_interp:
+                st.markdown(
+                    f"<div style='display:flex;gap:8px;margin-bottom:8px;"
+                    f"padding:7px 10px;background:#F7FAFC;"
+                    f"border-radius:6px;border-left:3px solid {color};'>"
+                    f"<p style='font-size:0.76rem;color:#2D3748;margin:0;"
+                    f"line-height:1.6;'>{text}</p></div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── 정책별 추천 학교 상세 (expander) ─────────────────────────────────
+    with st.expander("▶ 정책별 추천 학교 상세 목록"):
+        for label, cand_df, color in [
+            ("전문상담교사 배치 또는 순회상담 연계", result["a"], "#C0392B"),
+            ("Wee클래스 신설 또는 운영 보완",       result["b"], "#E67E22"),
+            ("Wee센터 연계 강화",                  result["c"], "#2980B9"),
+        ]:
+            if cand_df.empty:
+                continue
+            st.markdown(
+                f"<div style='font-size:0.80rem;font-weight:700;color:{color};"
+                f"margin:8px 0 4px;'>{label} ({len(cand_df)}개교)</div>",
+                unsafe_allow_html=True,
+            )
+            show_cand = cand_df[["school_name","sigungu","before_CSI","after_CSI",
+                                  "csi_improvement","before_priority_score",
+                                  "after_priority_score","priority_improvement",
+                                  "priority_level","policy_strategy_group"]].copy()
+            show_cand = show_cand.rename(columns={
+                "school_name":"학교명","sigungu":"시군구",
+                "before_CSI":"기존 CSI","after_CSI":"적용 후 CSI",
+                "csi_improvement":"CSI 개선폭",
+                "before_priority_score":"기존 PS","after_priority_score":"적용 후 PS",
+                "priority_improvement":"PS 개선폭",
+                "priority_level":"등급","policy_strategy_group":"전략그룹",
+            })
+            st.dataframe(show_cand.reset_index(drop=True),
+                         use_container_width=True, height=200)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3683,6 +4128,61 @@ def show_data_description(df: pd.DataFrame):
             "</div>",
             unsafe_allow_html=True,
         )
+
+    # ── AI 기반 우선배치 최적화 설명 ────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+            "🏆 15. AI 기반 우선배치 최적화 시뮬레이션 방식</div>",
+            unsafe_allow_html=True,
+        )
+        opt_cols = st.columns(2, gap="small")
+        with opt_cols[0]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
+                "margin-bottom:6px;'>목적 및 방식</div>"
+                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
+                "· 제한된 자원(전문상담교사 배치 수, Wee클래스 신설 수, Wee센터 연계 수)을 "
+                "어느 학교에 우선 적용해야 우선지원점수(PS) 개선효과가 최대인지 자동 추천<br>"
+                "· <b>Greedy Optimization</b> 방식: 각 정책별 후보를 개선효과 내림차순 정렬 → 상위 N개 선택<br>"
+                "· 전역 최적해를 보장하는 수리최적화가 아니라 해석 가능성 우선의 탐욕 알고리즘<br>"
+                "· 개선효과 = before_PS − after_PS (클수록 공급 부족 완화 효과 큼)"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
+                "margin:10px 0 6px;'>정책별 적용 방식</div>"
+                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
+                "· 전문상담교사 배치: staff_score &lt; 0.4 → 0.4 / 0.4~0.7 → 0.7<br>"
+                "· Wee클래스 신설: wee_class_score → 1.0<br>"
+                "· Wee센터 연계: wee_center_score &lt; 0.7 → 0.7<br>"
+                "· after_CSI = (변경된 3개 하위점수 평균)<br>"
+                "· after_PS = CDI − after_CSI"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with opt_cols[1]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
+                "margin-bottom:6px;'>한계 및 유의사항</div>",
+                unsafe_allow_html=True,
+            )
+            limits = [
+                "전역 최적해를 보장하지 않으며, 자원 비용 차이를 정교하게 반영하지 않음",
+                "실제 인력 수급 가능 여부, 예산 제약, 학교 현장 의견은 반영되지 않음",
+                "하위 점수가 구간화·이진화되어 있어 개선효과가 단순화될 수 있음",
+                "CDI(수요 지표)는 정책 적용 시에도 변경되지 않음",
+                "추천 결과는 실제 정책 배치 확정이 아니라 정책 검토 우선순위 참고 자료",
+            ]
+            for lt in limits:
+                st.markdown(
+                    f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
+                    f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>"
+                    f"{lt}</div>",
+                    unsafe_allow_html=True,
+                )
 
     # ── 하단 유의사항 배너 ────────────────────────────────────────────────────
     st.markdown(
