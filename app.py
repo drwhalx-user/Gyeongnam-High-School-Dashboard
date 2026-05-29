@@ -2566,51 +2566,33 @@ def show_simulation(df: pd.DataFrame):
         st.warning("선택한 조건에 해당하는 학교가 없습니다.")
         return
 
-    # 정책 미선택 안내
+    # ── 유형별 시뮬레이션: 정책 미선택 시 안내, 선택 시 결과 표시 ─────────────
     no_policy = not (apply_staff or apply_wee or apply_center or apply_prog)
     if no_policy:
-        st.info("정책 조건을 하나 이상 선택하면 시뮬레이션 결과를 확인할 수 있습니다.")
-        # 학교별 시뮬레이션은 정책 미선택 시에도 표시
-        st.markdown(
-            "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
-            "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
-            "🏫 학교별 정책 적용 시뮬레이션</h2>"
-            "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
-            "개별 학교를 선택하고 정책 조건을 적용하여 6개 하위 지표와 CSI·우선지원점수의 "
-            "변화를 레이더 차트로 비교합니다.</p>",
-            unsafe_allow_html=True,
-        )
-        _render_school_sim(df)
-        return
+        st.info("정책 조건을 하나 이상 선택하면 유형별 시뮬레이션 결과를 확인할 수 있습니다.")
+    else:
+        ps = df["priority_score"].dropna()
+        q90 = float(ps.quantile(0.90))
+        q80 = float(ps.quantile(0.80))
+        q20 = float(ps.quantile(0.20))
+        sim_df = _run_simulation(df, mask, apply_staff, apply_wee, apply_center, apply_prog, q90, q80, q20)
 
-    # ── 시뮬레이션 실행 ──────────────────────────────────────────────────────
-    # 원본 전체 데이터 분위수 기준값 계산 (priority_level 등급 기준과 동일한 방식)
-    ps = df["priority_score"].dropna()
-    q90 = float(ps.quantile(0.90))  # 상위 10% 기준
-    q80 = float(ps.quantile(0.80))  # 상위 20% 기준
-    q20 = float(ps.quantile(0.20))  # 하위 20% 기준
+        _render_sim_kpi_cards(sim_df)
+        st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
 
-    sim_df = _run_simulation(df, mask, apply_staff, apply_wee, apply_center, apply_prog, q90, q80, q20)
+        chart_col, tbl_col = st.columns([1.5, 1], gap="small")
+        with chart_col:
+            _render_sim_score_chart(sim_df)
+        with tbl_col:
+            _render_sim_result_table(sim_df)
 
-    # ── KPI 카드 4개 ─────────────────────────────────────────────────────────
-    _render_sim_kpi_cards(sim_df)
-    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+        eff_col, int_col = st.columns([1, 1], gap="small")
+        with eff_col:
+            _render_policy_effect_bar(sim_df, apply_staff, apply_wee, apply_center)
+        with int_col:
+            _render_sim_interpretation(sim_df, target_sel, apply_staff, apply_wee, apply_center, apply_prog)
 
-    # ── Row 2: 전후 그래프 (좌) + 결과 표 (우) ──────────────────────────────
-    chart_col, tbl_col = st.columns([1.5, 1], gap="small")
-    with chart_col:
-        _render_sim_score_chart(sim_df)
-    with tbl_col:
-        _render_sim_result_table(sim_df)
-
-    # ── Row 3: 정책별 효과 바 (좌) + 해석 박스 (우) ─────────────────────────
-    eff_col, int_col = st.columns([1, 1], gap="small")
-    with eff_col:
-        _render_policy_effect_bar(sim_df, apply_staff, apply_wee, apply_center)
-    with int_col:
-        _render_sim_interpretation(sim_df, target_sel, apply_staff, apply_wee, apply_center, apply_prog)
-
-    # ── AI 기반 우선배치 최적화 시뮬레이션 섹션 ─────────────────────────────
+    # ── AI 기반 우선배치 최적화 (항상 표시) ──────────────────────────────────
     st.markdown(
         "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
         "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
@@ -2621,7 +2603,7 @@ def show_simulation(df: pd.DataFrame):
     )
     show_optimization_sim()
 
-    # ── 학교별 시뮬레이션 섹션 ──────────────────────────────────────────────
+    # ── 학교별 시뮬레이션 (항상 표시) ────────────────────────────────────────
     st.markdown(
         "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
         "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
