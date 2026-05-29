@@ -1114,15 +1114,14 @@ def _render_regional_table(agg: pd.DataFrame):
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             "margin-bottom:6px;'>📋 시군별 우선지원 현황"
             "<span style='font-size:0.7rem;color:#999;font-weight:400;"
-            "margin-left:6px;'>* 가나다 순</span></div>",
+            "margin-left:6px;'>* 우선지원점수 내림차순</span></div>",
             unsafe_allow_html=True,
         )
-        agg_sorted = agg.sort_values("sigungu").reset_index(drop=True)
         rows = ""
-        for i, r in agg_sorted.iterrows():
+        for i, r in agg.iterrows():
             ps_color = (
-                "#C0392B" if r["평균PS"] >= agg_sorted["평균PS"].quantile(0.75)
-                else "#E67E22" if r["평균PS"] >= agg_sorted["평균PS"].median()
+                "#C0392B" if r["평균PS"] >= agg["평균PS"].quantile(0.75)
+                else "#E67E22" if r["평균PS"] >= agg["평균PS"].median()
                 else "#27AE60"
             )
             rows += (
@@ -1347,32 +1346,44 @@ def show_school_search(df: pd.DataFrame):
         unsafe_allow_html=True,
     )
 
-    # ── 학교 선택 selectbox ──────────────────────────────────────────────────
-    df_sorted = df.sort_values("school_name").reset_index(drop=True)
+    # ── 시 → 군 → 학교 계층 선택 ──────────────────────────────────────────
+    sido_col1, sido_col2, sido_col3 = st.columns([1, 1, 2], gap="small")
 
-    # 동명 학교 구분: 중복 레이블에 school_code 접미 추가
-    base_labels = df_sorted.apply(
-        lambda r: f"{r['school_name']} ({r['sigungu']})", axis=1
-    ).tolist()
+    # 1단계: 시(sido) 선택 — 가나다 순
+    sido_list = sorted(df["sido"].dropna().unique().tolist())
+    with sido_col1:
+        sel_sido = st.selectbox("📍 시 선택", sido_list, key="search_sido")
+
+    # 2단계: 군(sigungu) 선택 — 선택한 시에 속하는 시군구, 가나다 순
+    df_by_sido = df[df["sido"] == sel_sido]
+    sgg_list = sorted(df_by_sido["sigungu"].dropna().unique().tolist())
+    with sido_col2:
+        sel_sgg = st.selectbox("🗺️ 시군구 선택", sgg_list, key="search_sgg")
+
+    # 3단계: 학교 선택 — 선택한 시군구에 속하는 학교, 가나다 순
+    df_by_sgg = df_by_sido[df_by_sido["sigungu"] == sel_sgg].sort_values("school_name").reset_index(drop=True)
+
     from collections import Counter
+    base_labels = df_by_sgg.apply(
+        lambda r: f"{r['school_name']}", axis=1
+    ).tolist()
     cnt = Counter(base_labels)
     seen: dict = {}
-    options = []
-    for lbl, code in zip(base_labels, df_sorted["school_code"].tolist()):
+    options, codes_list = [], df_by_sgg["school_code"].tolist()
+    for lbl, code in zip(base_labels, codes_list):
         if cnt[lbl] > 1:
             seen[lbl] = seen.get(lbl, 0) + 1
             options.append(f"{lbl} [{code}]")
         else:
             options.append(lbl)
-    codes = df_sorted["school_code"].tolist()
 
-    sel_opt = st.selectbox(
-        "🔍 학교 선택",
-        options,
-        index=0,
-        help="우선지원점수 내림차순 정렬 | 동명 학교는 학교코드로 구분됩니다.",
-    )
-    sel_code = codes[options.index(sel_opt)]
+    with sido_col3:
+        if not options:
+            st.warning("해당 시군구에 학교가 없습니다.")
+            return
+        sel_opt = st.selectbox("🔍 학교 선택", options, key="search_school")
+
+    sel_code = codes_list[options.index(sel_opt)]
     row_df = df[df["school_code"] == sel_code]
     if row_df.empty:
         st.warning("선택한 학교 데이터를 찾을 수 없습니다.")
