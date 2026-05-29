@@ -29,8 +29,8 @@ st.markdown("""
 
 /* 사이드바 — 밝은 배경 + 좁은 너비 */
 [data-testid="stSidebar"] { background-color: #F7F9FC !important; }
-[data-testid="stSidebar"] > div:first-child { width: 210px !important; }
-section[data-testid="stSidebarContent"] { width: 210px !important; }
+[data-testid="stSidebar"] > div:first-child { width: 180px !important; }
+section[data-testid="stSidebarContent"] { width: 180px !important; }
 
 /* 메인 콘텐츠 패딩 조정 */
 .block-container {
