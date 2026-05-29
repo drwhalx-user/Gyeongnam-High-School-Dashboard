@@ -1772,15 +1772,15 @@ _KMEANS_INTERP = {
 }
 
 
-@st.cache_data(show_spinner=False)
-def _load_kmeans_data() -> pd.DataFrame | None:
+def _load_kmeans_data():
     if not _KMEANS_PATH.exists():
-        return None
+        return None, str(_KMEANS_PATH)
     try:
-        return pd.read_excel(_KMEANS_PATH, sheet_name="kmeans_school_table",
-                             dtype={"school_code": str})
-    except Exception:
-        return None
+        df = pd.read_excel(_KMEANS_PATH, sheet_name="kmeans_school_table",
+                           dtype={"school_code": str})
+        return df, None
+    except Exception as e:
+        return None, f"읽기 오류: {e}"
 
 
 def _render_kmeans_section():
@@ -1794,13 +1794,10 @@ def _render_kmeans_section():
         unsafe_allow_html=True,
     )
 
-    km_df = _load_kmeans_data()
+    km_df, err_msg = _load_kmeans_data()
 
     if km_df is None:
-        st.info(
-            "K-means 분석 결과가 아직 생성되지 않았습니다. "
-            "`scripts/16_kmeans_clustering_school_types_2025.py`를 먼저 실행하세요."
-        )
+        st.warning(f"K-means 파일을 불러올 수 없습니다.\n\n확인 경로: `{err_msg}`")
         return
 
     # 유효 데이터만 사용
