@@ -1,0 +1,36 @@
+=== 컬럼 목록 ===
+['school_code', 'school_name', 'sido', 'sigungu', 'counseling_staff_supply_score', 'wee_class_score', 'wee_center_access_score', 'demand_size_score', 'counseling_use_score', 'school_violence_risk_score', 'CSI', 'CDI', 'priority_score', 'priority_level', 'csi_level', 'cdi_level', 'supply_demand_type', 'policy_action_type', 'policy_recommendation', 'policy_reason', 'cdi_relative_level', 'csi_relative_level', 'supply_demand_matrix_3x3', 'policy_strategy_group', 'policy_strategy_tags', 'policy_strategy_description', 'school_latitude', 'school_longitude']
+
+=== policy_strategy_group 값 ===
+{'인력 취약형': 44, '안정형': 44, '우선 보완형': 35, '최우선 개입형': 15, '접근성 보완형': 8}
+
+=== supply_demand_matrix_3x3 값 ===
+{'평균 관리형': 63, '고수요 보완형': 29, '최소 인프라 보완형': 15, '잠재 취약형': 14, '안정 관리형': 11, '안정 모니터링형': 7, '여유·거점 활용형': 7}
+
+=== sigungu 목록 ===
+['거제시', '거창군', '고성군', '김해시', '남해군', '밀양시', '사천시', '산청군', '양산시', '의령군', '진주시', '창녕군', '창원시', '통영시', '하동군', '함안군', '함양군', '합천군']
+
+=== 위경도 결측 ===
+{'school_latitude': 0, 'school_longitude': 0}
+
+=== 시군구별 집계 샘플 ===
+         학교수  평균CSI  평균CDI   평균PS
+sigungu                          
+산청군        4  0.383  0.220 -0.163
+함양군        3  0.500  0.331 -0.169
+거제시        7  0.681  0.490 -0.191
+남해군        4  0.542  0.325 -0.216
+양산시       11  0.664  0.447 -0.217
+김해시       17  0.667  0.449 -0.218
+사천시        6  0.572  0.346 -0.226
+함안군        4  0.567  0.314 -0.252
+진주시       13  0.667  0.400 -0.266
+창원시       40  0.682  0.404 -0.279
+밀양시        6  0.583  0.296 -0.288
+하동군        5  0.527  0.232 -0.295
+통영시        5  0.773  0.478 -0.296
+합천군        4  0.600  0.229 -0.371
+고성군        3  0.711  0.276 -0.435
+창녕군        6  0.717  0.251 -0.466
+의령군        2  0.667  0.169 -0.497
+거창군        6  0.822  0.287 -0.535

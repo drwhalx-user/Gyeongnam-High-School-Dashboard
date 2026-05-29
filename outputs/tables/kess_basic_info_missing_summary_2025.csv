@@ -1,0 +1,13 @@
+﻿variable,total,missing_count,zero_count,missing_rate(%)
+school_code,146,0,0,0.0
+school_name,146,0,0,0.0
+sido,146,0,0,0.0
+sigungu,146,0,0,0.0
+education_office,146,0,0,0.0
+school_type,146,0,0,0.0
+postcode,146,0,0,0.0
+address,146,0,0,0.0
+student_count,146,0,0,0.0
+teacher_count,146,0,0,0.0
+counselor_count,146,0,75,0.0
+students_per_counselor,146,75,0,51.37

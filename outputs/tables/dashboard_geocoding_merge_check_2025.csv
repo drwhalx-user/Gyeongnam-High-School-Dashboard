@@ -1,0 +1,8 @@
+﻿항목,값
+전체 학교 수,146
+위경도 병합 성공 학교 수,146
+위경도 결측 학교 수,0
+school_code 기준 병합 수,146
+school_name 보조 병합 수,0
+병합 실패 학교 목록,(없음)
+사용 지오코딩 소스 파일,gyeongnam_general_high_schools_geocoded_2025.csv

@@ -1,0 +1,10 @@
+﻿variable,total,missing_count,zero_count,missing_rate(%)
+avg_teacher_counseling_count_3yr,146,0,7,0.0
+avg_external_counseling_count_3yr,146,0,19,0.0
+avg_total_counseling_count_3yr,146,0,2,0.0
+counseling_years_available,146,0,0,0.0
+counseling_count_per_student,146,0,2,0.0
+norm_avg_total_counseling_count_3yr,146,0,2,0.0
+norm_counseling_count_per_student,146,0,2,0.0
+counseling_use_score,146,0,2,0.0
+counseling_use_components_available,146,0,0,0.0

@@ -1,0 +1,21 @@
+﻿항목,값
+전체 학교 수,146
+CSI 산출 완료 학교 수,146
+CSI 결측 학교 수,0
+CSI 평균,0.6532
+CSI 중앙값,0.6667
+CSI 최솟값,0.0333
+CSI 최댓값,1.0
+--- 구성요소별 ---,
+counseling_staff_supply_score 평균,0.2726
+counseling_staff_supply_score 결측,0
+wee_class_score 평균,0.8904
+wee_class_score 결측,0
+wee_center_access_score 평균,0.7966
+wee_center_access_score 결측,0
+--- CSI 구간별 학교 수 ---,
+CSI 구간: 공급 낮음,9
+CSI 구간: 공급 보통,29
+CSI 구간: 공급 양호,90
+CSI 구간: 공급 높음,18
+CSI 구간: 확인 필요,0
