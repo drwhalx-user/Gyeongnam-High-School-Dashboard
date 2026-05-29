@@ -398,7 +398,8 @@ def render_sidebar(df: pd.DataFrame):
     # 메뉴
     tabs = [
         "📋 현황 개요", "🗺️ 지역별 분석", "🔍 학교 검색",
-        "📊 유형 분석",  "⚙️ 시뮬레이션",  "ℹ️ 데이터 설명",
+        "📊 유형 분석",  "💡 AI 기반 정책 제안",
+        "⚙️ 시뮬레이션",  "ℹ️ 데이터 설명",
     ]
     selected = sb.radio("메뉴", tabs, label_visibility="collapsed")
 
@@ -1113,14 +1114,15 @@ def _render_regional_table(agg: pd.DataFrame):
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             "margin-bottom:6px;'>📋 시군별 우선지원 현황"
             "<span style='font-size:0.7rem;color:#999;font-weight:400;"
-            "margin-left:6px;'>* 우선지원점수 내림차순</span></div>",
+            "margin-left:6px;'>* 가나다 순</span></div>",
             unsafe_allow_html=True,
         )
+        agg_sorted = agg.sort_values("sigungu").reset_index(drop=True)
         rows = ""
-        for i, r in agg.iterrows():
+        for i, r in agg_sorted.iterrows():
             ps_color = (
-                "#C0392B" if r["평균PS"] >= agg["평균PS"].quantile(0.75)
-                else "#E67E22" if r["평균PS"] >= agg["평균PS"].median()
+                "#C0392B" if r["평균PS"] >= agg_sorted["평균PS"].quantile(0.75)
+                else "#E67E22" if r["평균PS"] >= agg_sorted["평균PS"].median()
                 else "#27AE60"
             )
             rows += (
@@ -1346,7 +1348,7 @@ def show_school_search(df: pd.DataFrame):
     )
 
     # ── 학교 선택 selectbox ──────────────────────────────────────────────────
-    df_sorted = df.sort_values("priority_score", ascending=False).reset_index(drop=True)
+    df_sorted = df.sort_values("school_name").reset_index(drop=True)
 
     # 동명 학교 구분: 중복 레이블에 school_code 접미 추가
     base_labels = df_sorted.apply(
@@ -1395,14 +1397,33 @@ def show_school_search(df: pd.DataFrame):
         _render_school_avg_comparison(row, df)
         _render_similar_schools(row, df)
 
-    # 정책 적합도 점수 데이터 로드
+    # 정책 적합도 점수 데이터 로드 (1순위 간단 표시용)
     _df_scores = _load_scores_data()
     _row_scores = _get_school_scores(_df_scores, sel_code)
 
     with right_col:
         _render_policy_feedback(row)
-        _render_policy_fit_card(_row_scores)
-        _render_school_ai_briefing(row if _row_scores is None else _row_scores)
+        # ── 1순위 추천 정책 간단 표시 + AI 정책 제안 탭 안내 ────────────────
+        _p1 = (_row_scores.get("recommended_policy_1", "") if _row_scores is not None else
+               row.get("recommended_policy_1", ""))
+        _s1 = (_row_scores.get("recommended_policy_1_score", "") if _row_scores is not None else "")
+        if _p1:
+            _s1_str = f" (적합도 {float(_s1):.3f})" if _s1 and str(_s1) != "nan" else ""
+            st.markdown(
+                f"<div style='background:#EBF2FF;border-left:3px solid #2E5FA3;"
+                f"padding:8px 12px;border-radius:4px;font-size:0.76rem;color:#1E3A5F;"
+                f"margin-bottom:6px;'>"
+                f"🤖 <b>AI 추천 1순위:</b> {_p1}{_s1_str}</div>",
+                unsafe_allow_html=True,
+            )
+        st.markdown(
+            "<div style='background:#F7FAFC;border:1px solid #E2E8F0;"
+            "padding:8px 12px;border-radius:6px;font-size:0.74rem;color:#4A5568;"
+            "margin-bottom:6px;'>"
+            "📋 정책별 적합도 점수, 추천 근거, AI 브리핑은 "
+            "<b>💡 AI 기반 정책 제안</b> 탭에서 확인하세요.</div>",
+            unsafe_allow_html=True,
+        )
         _render_school_detail_table(row)
 
     # ── footer ────────────────────────────────────────────────────────────────
@@ -3284,53 +3305,14 @@ def show_optimization_sim():
             st.dataframe(show_cand.reset_index(drop=True),
                          use_container_width=True, height=200)
 
-    # ── AI 최적화 결과 브리핑 ─────────────────────────────────────────────
+    # ── AI 정책 제안 탭 안내 ────────────────────────────────────────────────
     st.markdown(
-        "<hr style='border-color:#E2E8F0;margin:16px 0 12px;'>"
-        "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-        "margin-bottom:4px;'>🤖 AI 최적화 결과 브리핑</div>"
-        "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
-        "최적화 시뮬레이션 결과를 LLM이 자연어 보고서로 요약합니다.</div>",
+        "<div style='background:#F7FAFC;border:1px solid #E2E8F0;"
+        "padding:8px 14px;border-radius:6px;font-size:0.74rem;color:#4A5568;"
+        "margin-top:8px;'>"
+        "💡 정책 해석 및 AI 브리핑은 <b>AI 기반 정책 제안</b> 탭에서 확인하세요.</div>",
         unsafe_allow_html=True,
     )
-    if st.button("📋 최적화 결과 브리핑 생성", key="opt_briefing_btn"):
-        top5_names = (combined.head(5)["school_name"].tolist()
-                      if "school_name" in combined.columns else [])
-        opt_summary = {
-            "scope": scope, "n_a": n_a, "n_b": n_b, "n_c": n_c,
-            "n_schools": n_sch,
-            "avg_csi_before": avg_csi_b, "avg_csi_after": avg_csi_a,
-            "avg_ps_before": avg_ps_b,   "avg_ps_after": avg_ps_a,
-            "n_pos_before": n_pos_b,     "n_pos_after": n_pos_a,
-            "best_school": combined.iloc[0]["school_name"] if not combined.empty else "-",
-            "top5_schools": [f"{r['school_name']}({r['sigungu']}) — 개선폭 {r['combined_priority_improvement']:.3f}"
-                             for _, r in combined.head(5).iterrows()],
-        }
-        with st.spinner("AI 브리핑 생성 중..."):
-            api_key = _get_gemini_key()
-            if not api_key:
-                st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
-                briefing = generate_rule_based_optimization_briefing(opt_summary)
-                is_ai = False
-            else:
-                prompt  = _build_optimization_prompt(opt_summary)
-                briefing, is_ai = generate_ai_briefing(prompt)
-                if not briefing or not is_ai:
-                    st.caption("⚠️ AI 브리핑 생성 중 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
-                    briefing = generate_rule_based_optimization_briefing(opt_summary)
-
-        label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
-        st.markdown(
-            f"<div style='background:#F7FAFC;border-left:3px solid #9B59B6;"
-            f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
-            f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
-            f"<div style='font-size:0.76rem;color:#2D3748;line-height:1.7;'>"
-            f"{briefing.replace(chr(10), '<br>')}</div>"
-            f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
-            f"※ 본 브리핑은 지수 산식 기반 가상 시뮬레이션 결과이며 실제 정책 배치 확정이 아닙니다.</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3358,7 +3340,7 @@ def _render_school_sim(df: pd.DataFrame):
                 "margin-bottom:8px;'>🔍 학교 선택</div>",
                 unsafe_allow_html=True,
             )
-            df_s = df.sort_values("priority_score", ascending=False).reset_index(drop=True)
+            df_s = df.sort_values("school_name").reset_index(drop=True)
             from collections import Counter
             base_labels = df_s.apply(
                 lambda r: f"{r['school_name']} ({r['sigungu']})", axis=1
@@ -4275,6 +4257,7 @@ def show_data_description(df: pd.DataFrame):
             ("policy_reason",                  "판단 근거",            "해당 학교 지표 패턴 기반 설명",           "정책 피드백", "-"),
         ]
         var_df = pd.DataFrame(var_data, columns=["변수명","한글명","설명","지수 구분","값의 방향"])
+        var_df = var_df[["한글명","변수명","설명","지수 구분","값의 방향"]]
         st.dataframe(var_df, use_container_width=True, height=460)
 
     # ── Row 6: 결측 처리 / 시뮬레이션 한계 / 전체 한계 ─────────────────────
@@ -4499,6 +4482,505 @@ def show_data_description(df: pd.DataFrame):
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ── AI 기반 정책 제안 탭 ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+def show_ai_policy(df: pd.DataFrame):
+    """AI 기반 정책 제안 탭 — 학교별 정책 추천·적합도·브리핑 통합."""
+
+    # ── 헤더 ─────────────────────────────────────────────────────────────────
+    st.markdown(
+        "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 2px 0;font-weight:700;'>"
+        "AI 기반 정책 제안</h1>"
+        "<p style='color:#718096;font-size:0.78rem;margin:0 0 8px 0;'>"
+        "학교별 상담수요·상담공급 지표, 우선지원점수, 정책별 적합도 점수, K-means 군집 결과를 "
+        "종합하여 학교별 맞춤형 정책 제안을 제공합니다.</p>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<div style='background:#FEF9E7;border-left:3px solid #F39C12;"
+        "padding:6px 12px;border-radius:4px;font-size:0.74rem;color:#7D6608;"
+        "margin-bottom:14px;'>"
+        "⚠️ 본 정책 제안은 실제 지원 확정이 아니라, 교육 공공데이터 기반 의사결정 지원 결과입니다. "
+        "최종 정책 결정에는 예산, 인력 수급, 학교 현장 의견, 전문가 검토가 함께 고려되어야 합니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # 정책 점수 데이터 로드
+    df_scores = _load_scores_data()
+    df_main   = df_scores if df_scores is not None else df
+
+    # ── KPI 5개 카드 ──────────────────────────────────────────────────────────
+    _render_ai_policy_kpi(df_main)
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+
+    # ── 학교 선택 ─────────────────────────────────────────────────────────────
+    df_s = df_main.sort_values("school_name").reset_index(drop=True)
+    from collections import Counter
+    base_labels = df_s.apply(
+        lambda r: f"{r['school_name']} ({r['sigungu']})", axis=1
+    ).tolist()
+    cnt_lbl = Counter(base_labels)
+    seen_lbl: dict = {}
+    sch_opts, sch_codes = [], df_s["school_code"].tolist()
+    for lbl, code in zip(base_labels, sch_codes):
+        if cnt_lbl[lbl] > 1:
+            seen_lbl[lbl] = seen_lbl.get(lbl, 0) + 1
+            sch_opts.append(f"{lbl} [{code}]")
+        else:
+            sch_opts.append(lbl)
+
+    sel_opt  = st.selectbox("🔍 학교 선택 (가나다 순)", sch_opts, index=0)
+    sel_code = sch_codes[sch_opts.index(sel_opt)]
+    row_sc   = _get_school_scores(df_scores, sel_code)
+    row_base = df_main[df_main["school_code"] == sel_code]
+    if row_base.empty:
+        st.warning("선택한 학교 데이터를 찾을 수 없습니다.")
+        return
+    row = row_sc if row_sc is not None else row_base.iloc[0]
+    if not isinstance(row, pd.Series):
+        row = pd.Series(row)
+
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+
+    # ── Row 1: 기본 진단 카드(좌) + 추천 순위 카드(우) ───────────────────────
+    diag_col, rank_col = st.columns([1.2, 1.8], gap="small")
+    with diag_col:
+        _render_ai_school_diag(row)
+    with rank_col:
+        _render_ai_rank_cards(row)
+
+    # ── Row 2: 적합도 바 차트(좌) + 추천 근거 카드(우) ──────────────────────
+    fit_col, reason_col = st.columns([1, 1], gap="small")
+    with fit_col:
+        _render_ai_fit_bar(row)
+    with reason_col:
+        _render_ai_reason_card(row)
+
+    # ── AI 정책 브리핑 섹션 ───────────────────────────────────────────────────
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "🤖 AI 정책 브리핑 생성</div>"
+            "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
+            "기존 분석 결과를 바탕으로 LLM이 자연어 브리핑을 생성합니다. "
+            "LLM은 새로운 판단을 하지 않으며, 정책 검토용 참고 자료입니다.</div>",
+            unsafe_allow_html=True,
+        )
+        btn_key = f"ai_policy_briefing_{sel_code}"
+        if st.button("🤖 선택 학교 AI 정책 브리핑 생성", key=btn_key):
+            with st.spinner("AI 브리핑 생성 중..."):
+                api_key = _get_gemini_key()
+                if not api_key:
+                    st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
+                    briefing = generate_rule_based_school_briefing(row)
+                    is_ai = False
+                else:
+                    prompt  = _build_school_prompt(row)
+                    briefing, is_ai = generate_ai_briefing(prompt)
+                    if not briefing or not is_ai:
+                        st.caption("⚠️ 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
+                        briefing = generate_rule_based_school_briefing(row)
+            label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
+            st.markdown(
+                f"<div style='background:#F7FAFC;border-left:3px solid #2E5FA3;"
+                f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
+                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
+                f"<div style='font-size:0.78rem;color:#2D3748;line-height:1.8;'>"
+                f"{briefing.replace(chr(10), '<br>')}</div>"
+                f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
+                f"※ 정책 검토용 참고 자료이며 실제 지원 확정 기준이 아닙니다.</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+    # ── 전체 정책 제안 분포 ───────────────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:24px 0 16px;'>"
+        "<h2 style='font-size:1.05rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+        "📊 전체 정책 제안 분포</h2>",
+        unsafe_allow_html=True,
+    )
+    _render_policy_distribution(df_main)
+
+    # ── 우선지원 대상 표 ──────────────────────────────────────────────────────
+    _render_priority_target_table(df_main)
+
+    # ── 정책별 상위 5개교 (expander) ─────────────────────────────────────────
+    _render_policy_top5_expander(df_main)
+
+    # ── 설명 박스 ─────────────────────────────────────────────────────────────
+    st.markdown(
+        "<div style='background:#F0F4F8;border-radius:8px;padding:12px 16px;"
+        "font-size:0.73rem;color:#4A5568;line-height:1.8;margin-top:8px;'>"
+        "📌 <b>정책 제안 로직 설명</b><br>"
+        "· 정책별 적합도 점수: 6개 하위 지표 및 우선지원점수를 가중합하여 0~1로 산출<br>"
+        "· K-means 군집: 학교 간 유사한 지표 구조를 파악하는 보조 분석 (주 분석 대체 아님)<br>"
+        "· AI 브리핑: 계산된 정량 결과를 LLM이 자연어로 요약 (새로운 판단 없음)<br>"
+        "· 추천 정책 순위: 6개 적합도 점수 중 가장 높은 순서로 자동 배정<br>"
+        "· 본 제안은 실제 지원 확정이 아니라 정책 검토 우선순위이며, "
+        "최종 결정에는 교육청 예산·인력·현장 의견·전문가 검토가 필요합니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "<div class='footer-note'>"
+        "※ AI 기반 정책 제안은 교육 공공데이터 기반 의사결정 지원 도구이며 "
+        "실제 지원 확정 기준이 아닙니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ── AI 정책 제안 탭 헬퍼 함수 ────────────────────────────────────────────────
+
+def _render_ai_policy_kpi(df: pd.DataFrame):
+    """AI 기반 정책 제안 탭 KPI 5개 카드."""
+    n_total   = len(df)
+    n_top     = int((df.get("policy_strategy_group", pd.Series(dtype=str)) == "최우선 개입형").sum())
+    n_prior   = int((df.get("policy_strategy_group", pd.Series(dtype=str)) == "우선 보완형").sum())
+
+    # 1순위 추천 최다 정책
+    top_pol, top_pol_n = "-", 0
+    if "recommended_policy_1" in df.columns:
+        vc = df["recommended_policy_1"].value_counts()
+        if not vc.empty:
+            top_pol   = vc.index[0]
+            top_pol_n = int(vc.iloc[0])
+
+    # 평균 적합도 최고 정책
+    best_fit_pol, best_fit_v = "-", 0.0
+    for col, name in _FIT_COLS.items():
+        if col in df.columns:
+            avg = float(df[col].mean())
+            if avg > best_fit_v:
+                best_fit_v   = avg
+                best_fit_pol = name
+
+    c1,c2,c3,c4,c5 = st.columns(5, gap="small")
+    specs = [
+        (c1, "#2E5FA3", "분석 대상 학교 수",   f"{n_total}개교",  "경남 일반고 전수"),
+        (c2, "#C0392B", "최우선 개입형",         f"{n_top}개교",    "policy_strategy_group"),
+        (c3, "#E67E22", "우선 보완형",            f"{n_prior}개교",  "policy_strategy_group"),
+        (c4, "#9B59B6", "1순위 추천 최다 정책",  top_pol,           f"{top_pol_n}개교"),
+        (c5, "#1ABC9C", "평균 적합도 최고 정책", best_fit_pol,      f"평균 {best_fit_v:.3f}"),
+    ]
+    for col, color, label, value, sub in specs:
+        with col:
+            st.markdown(
+                f"<div style='background:white;border-radius:10px;padding:12px 10px;"
+                f"box-shadow:0 2px 8px rgba(0,0,0,0.08);border-top:3px solid {color};"
+                f"min-height:95px;'>"
+                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:4px;'>{label}</div>"
+                f"<div style='font-size:0.95rem;font-weight:700;color:{color};"
+                f"line-height:1.3;word-break:keep-all;'>{value}</div>"
+                f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:2px;'>{sub}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_ai_school_diag(row: pd.Series):
+    """선택 학교 기본 진단 카드."""
+    def _v(col, fmt=""):
+        val = row.get(col, "")
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return "확인 필요"
+        try:
+            return f"{float(val):.3f}" if fmt == "f" else str(val)
+        except Exception:
+            return str(val)
+
+    pdisp  = PRIORITY_DISPLAY.get(_v("priority_level"), _v("priority_level"))
+    pcolor = PRIORITY_COLORS.get(pdisp, "#718096")
+    sg     = _v("policy_strategy_group")
+    scolor = STRATEGY_COLORS.get(sg, "#718096")
+
+    items = [
+        ("시군구",         _v("sigungu")),
+        ("CSI",            _v("CSI", "f")),
+        ("CDI",            _v("CDI", "f")),
+        ("우선지원점수",   _v("priority_score", "f")),
+        ("3x3 유형",       _v("supply_demand_matrix_3x3")),
+        ("K-means 군집",   _v("kmeans_cluster_label")),
+    ]
+    rows_html = "".join(
+        f"<div style='display:flex;justify-content:space-between;padding:5px 0;"
+        f"border-bottom:1px solid #F0F4F8;font-size:0.76rem;'>"
+        f"<span style='color:#718096;'>{k}</span>"
+        f"<span style='color:#2D3748;font-weight:600;'>{v}</span></div>"
+        for k, v in items
+    )
+    badge = (
+        f"<div style='display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;'>"
+        f"<span style='background:{pcolor};color:white;padding:2px 8px;"
+        f"border-radius:8px;font-size:0.70rem;font-weight:700;'>{pdisp}</span>"
+        f"<span style='background:{scolor};color:white;padding:2px 8px;"
+        f"border-radius:8px;font-size:0.70rem;font-weight:700;'>{sg}</span></div>"
+    )
+    with st.container(border=True):
+        st.markdown(
+            f"<div style='font-size:1.0rem;font-weight:700;color:#1E3A5F;"
+            f"margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #2E5FA3;'>"
+            f"🏫 {_v('school_name')}</div>" + rows_html + badge,
+            unsafe_allow_html=True,
+        )
+
+
+def _render_ai_rank_cards(row: pd.Series):
+    """추천 정책 1~3순위 카드."""
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+            "🏆 AI 추천 정책 1~3순위</div>"
+            "<div style='font-size:0.70rem;color:#A0AEC0;margin-bottom:10px;'>"
+            "점수 1에 가까울수록 해당 정책 우선검토 필요성이 높습니다.</div>",
+            unsafe_allow_html=True,
+        )
+        rank_colors = ["#C0392B", "#E67E22", "#2980B9"]
+        for i, (rec_col, score_col, color) in enumerate([
+            ("recommended_policy_1", "recommended_policy_1_score", rank_colors[0]),
+            ("recommended_policy_2", "recommended_policy_2_score", rank_colors[1]),
+            ("recommended_policy_3", "recommended_policy_3_score", rank_colors[2]),
+        ], 1):
+            name  = row.get(rec_col, "")
+            score = row.get(score_col, "")
+            if not name or (isinstance(name, float) and pd.isna(name)):
+                continue
+            try:
+                s_str = f"{float(score):.3f}"
+            except Exception:
+                s_str = "-"
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:10px;"
+                f"padding:10px 12px;margin-bottom:8px;background:#F7FAFC;"
+                f"border-radius:8px;border-left:4px solid {color};'>"
+                f"<span style='background:{color};color:white;padding:2px 10px;"
+                f"border-radius:8px;font-size:0.72rem;font-weight:700;"
+                f"white-space:nowrap;'>{i}순위</span>"
+                f"<div style='flex:1;'>"
+                f"<div style='font-size:0.78rem;font-weight:700;color:#2D3748;'>{name}</div>"
+                f"</div>"
+                f"<span style='font-size:0.78rem;font-weight:700;color:{color};"
+                f"white-space:nowrap;'>{s_str}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_ai_fit_bar(row: pd.Series):
+    """선택 학교 정책별 적합도 수평 바 차트."""
+    names  = list(_FIT_COLS.values())
+    values = [float(row.get(col, 0) or 0) for col in _FIT_COLS]
+    if all(v == 0 for v in values):
+        with st.container(border=True):
+            st.info("정책별 적합도 점수 데이터가 없습니다.")
+        return
+
+    fig = go.Figure(go.Bar(
+        x=values, y=names, orientation="h",
+        marker_color=_FIT_COLORS,
+        text=[f"{v:.3f}" for v in values],
+        textposition="outside", textfont=dict(size=9),
+    ))
+    fig.update_layout(
+        title=dict(text="선택 학교의 정책별 적합도 점수",
+                   font=dict(size=12, color="#1E3A5F"), x=0),
+        height=280, margin=dict(l=10, r=50, t=40, b=10),
+        xaxis=dict(range=[0, 1.15], title="적합도 (0~1)", tickfont=dict(size=8)),
+        yaxis=dict(tickfont=dict(size=9)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="Malgun Gothic, sans-serif"),
+    )
+    with st.container(border=True):
+        st.plotly_chart(fig, width="stretch")
+
+
+def _render_ai_reason_card(row: pd.Series):
+    """추천 근거 카드 (중복 제거, expander 처리)."""
+    def _safe(col):
+        v = row.get(col, "")
+        return "" if (v is None or (isinstance(v, float) and pd.isna(v))) else str(v)
+
+    reason   = _safe("recommended_policy_reason")
+    pol_rec  = _safe("policy_recommendation")
+    pol_rsn  = _safe("policy_reason")
+    pol_desc = _safe("policy_strategy_description")
+    tags_raw = _safe("policy_strategy_tags")
+    tags     = [t.strip() for t in tags_raw.split(";") if t.strip()][:8]
+
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "📋 추천 근거</div>",
+            unsafe_allow_html=True,
+        )
+        if reason:
+            st.markdown(
+                f"<div style='font-size:0.76rem;color:#2D3748;line-height:1.6;"
+                f"margin-bottom:8px;'>{reason}</div>",
+                unsafe_allow_html=True,
+            )
+        if pol_rsn and pol_rsn != reason:
+            with st.expander("상세 판단 근거 보기"):
+                st.markdown(
+                    f"<div style='font-size:0.74rem;color:#4A5568;line-height:1.6;'>{pol_rsn}</div>",
+                    unsafe_allow_html=True,
+                )
+        if pol_desc:
+            st.markdown(
+                f"<div style='background:#F0FFF4;border-left:3px solid #27AE60;"
+                f"padding:6px 10px;border-radius:4px;margin-top:6px;"
+                f"font-size:0.74rem;color:#2D3748;line-height:1.5;'>{pol_desc}</div>",
+                unsafe_allow_html=True,
+            )
+        if tags:
+            tag_html = " ".join(
+                f"<span style='background:#EBF2FF;color:#2C5282;padding:2px 8px;"
+                f"border-radius:8px;font-size:0.67rem;'>{t}</span>" for t in tags
+            )
+            st.markdown(f"<div style='margin-top:8px;line-height:2;'>{tag_html}</div>",
+                        unsafe_allow_html=True)
+        if not any([reason, pol_rsn, pol_desc]):
+            st.info("추천 근거 정보가 없습니다.")
+        st.markdown(
+            "<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
+            "※ 본 추천은 정책 검토용 참고 자료이며 실제 지원 확정 기준이 아닙니다.</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_policy_distribution(df: pd.DataFrame):
+    """전체 정책 제안 분포 그래프 2개 + 교차표."""
+    dist_col, avg_col = st.columns([1, 1], gap="small")
+
+    with dist_col:
+        if "recommended_policy_1" in df.columns:
+            vc = df["recommended_policy_1"].value_counts().reset_index()
+            vc.columns = ["정책", "학교수"]
+            vc = vc.sort_values("학교수", ascending=True)
+            colors_dist = [_FIT_COLORS[i % len(_FIT_COLORS)] for i in range(len(vc))]
+            fig = go.Figure(go.Bar(
+                x=vc["학교수"], y=vc["정책"], orientation="h",
+                marker_color=colors_dist,
+                text=vc["학교수"], textposition="outside", textfont=dict(size=10),
+            ))
+            fig.update_layout(
+                title=dict(text="1순위 추천 정책별 학교 수",
+                           font=dict(size=12, color="#1E3A5F"), x=0),
+                height=280, margin=dict(l=10, r=40, t=40, b=10),
+                xaxis=dict(tickfont=dict(size=9)),
+                yaxis=dict(tickfont=dict(size=9)),
+                plot_bgcolor="white", paper_bgcolor="white",
+                font=dict(family="Malgun Gothic, sans-serif"),
+            )
+            with st.container(border=True):
+                st.plotly_chart(fig, width="stretch")
+
+    with avg_col:
+        avail_fits = {k: v for k, v in _FIT_COLS.items() if k in df.columns}
+        if avail_fits:
+            avg_vals = [float(df[col].mean()) for col in avail_fits]
+            fig2 = go.Figure(go.Bar(
+                x=list(avail_fits.values()), y=avg_vals,
+                marker_color=_FIT_COLORS[:len(avail_fits)],
+                text=[f"{v:.3f}" for v in avg_vals],
+                textposition="outside", textfont=dict(size=9),
+            ))
+            fig2.update_layout(
+                title=dict(text="정책별 평균 적합도 점수",
+                           font=dict(size=12, color="#1E3A5F"), x=0),
+                height=280, margin=dict(l=10, r=10, t=40, b=50),
+                yaxis=dict(range=[0, 1.1], tickfont=dict(size=9)),
+                xaxis=dict(tickangle=-20, tickfont=dict(size=8)),
+                plot_bgcolor="white", paper_bgcolor="white",
+                font=dict(family="Malgun Gothic, sans-serif"),
+            )
+            with st.container(border=True):
+                st.plotly_chart(fig2, width="stretch")
+
+    # 교차표
+    if "policy_strategy_group" in df.columns and "recommended_policy_1" in df.columns:
+        with st.container(border=True):
+            st.markdown(
+                "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+                "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+                "📋 정책전략 그룹별 1순위 추천 정책 분포</div>",
+                unsafe_allow_html=True,
+            )
+            ct = pd.crosstab(df["policy_strategy_group"], df["recommended_policy_1"])
+            st.dataframe(ct, use_container_width=True)
+
+
+def _render_priority_target_table(df: pd.DataFrame):
+    """우선지원 대상 학교별 AI 정책 제안 표."""
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "🎯 우선지원 대상 학교별 AI 정책 제안</div>",
+            unsafe_allow_html=True,
+        )
+        disp_cols = {
+            "school_name": "학교명", "sigungu": "시군구",
+            "CSI": "CSI", "CDI": "CDI",
+            "priority_score": "우선지원점수", "priority_level": "등급",
+            "policy_strategy_group": "전략그룹",
+            "kmeans_cluster_label": "K-means",
+            "recommended_policy_1": "추천1",
+            "recommended_policy_1_score": "점수1",
+            "recommended_policy_2": "추천2",
+            "recommended_policy_2_score": "점수2",
+            "recommended_policy_3": "추천3",
+            "recommended_policy_3_score": "점수3",
+        }
+        avail = {k: v for k, v in disp_cols.items() if k in df.columns}
+        tbl = (df[list(avail.keys())]
+               .sort_values("priority_score", ascending=False)
+               .reset_index(drop=True)
+               .rename(columns=avail))
+        for c in ["CSI","CDI","우선지원점수","점수1","점수2","점수3"]:
+            if c in tbl.columns:
+                tbl[c] = tbl[c].apply(
+                    lambda x: f"{float(x):.3f}" if pd.notna(x) else "-"
+                )
+        st.dataframe(tbl, use_container_width=True, height=320)
+
+
+def _render_policy_top5_expander(df: pd.DataFrame):
+    """정책별 적합도 상위 5개교 (expander)."""
+    with st.expander("▶ 정책 유형별 적합도 상위 5개 학교"):
+        base_cols = ["school_name","sigungu","priority_score","priority_level","policy_strategy_group"]
+        for col, name in _FIT_COLS.items():
+            if col not in df.columns:
+                continue
+            top5 = df.nlargest(5, col)[
+                [c for c in base_cols + [col] if c in df.columns]
+            ].copy().reset_index(drop=True)
+            top5.insert(0, "순위", range(1, len(top5)+1))
+            top5 = top5.rename(columns={
+                col: "적합도 점수",
+                "school_name":"학교명","sigungu":"시군구",
+                "priority_score":"PS","priority_level":"등급",
+                "policy_strategy_group":"전략그룹",
+            })
+            for c in ["PS","적합도 점수"]:
+                if c in top5.columns:
+                    top5[c] = top5[c].apply(lambda x: f"{float(x):.3f}" if pd.notna(x) else "-")
+            st.markdown(
+                f"<div style='font-size:0.80rem;font-weight:700;color:#2E5FA3;"
+                f"margin:10px 0 4px;'>📌 {name}</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(top5, use_container_width=True, height=210)
+
+
 def main():
     if not DATA_PATH.exists():
         st.error(
@@ -4529,6 +5011,8 @@ def main():
         show_school_search(df)
     elif tab_key == "유형 분석":
         show_type_analysis(df)
+    elif tab_key == "AI 기반 정책 제안":
+        show_ai_policy(df)
     elif tab_key == "시뮬레이션":
         show_simulation(df)
     elif tab_key == "데이터 설명":
