@@ -762,9 +762,9 @@ def _render_regional_kpi(agg: pd.DataFrame):
     top_intv_sgg = agg.loc[top_intv_idx, "sigungu"]
     top_intv_cnt = int(agg.loc[top_intv_idx, "최우선 개입형"])
 
-    top_high_idx = agg["고수요 보완형"].idxmax()
-    top_high_sgg = agg.loc[top_high_idx, "sigungu"]
-    top_high_cnt = int(agg.loc[top_high_idx, "고수요 보완형"])
+    top_manp_idx = agg["인력 취약형"].idxmax() if "인력 취약형" in agg.columns else None
+    top_manp_sgg = agg.loc[top_manp_idx, "sigungu"] if top_manp_idx is not None else "-"
+    top_manp_cnt = int(agg.loc[top_manp_idx, "인력 취약형"]) if top_manp_idx is not None else 0
 
     defs = [
         ("분석 대상 시군구 수",     f"{n_sgg}개 시군구",  "경남 일반고 전수 대상",
@@ -773,8 +773,8 @@ def _render_regional_kpi(agg: pd.DataFrame):
          "📍", "#FEF9E7", "#F39C12"),
         ("최우선 개입형 최다 지역", top_intv_sgg,         f"{top_intv_cnt}개교",
          "⚠️", "#FDECEA", "#C0392B"),
-        ("고수요 보완형 최다 지역", top_high_sgg,         f"{top_high_cnt}개교",
-         "📊", "#F3E8FF", "#8E44AD"),
+        ("인력 취약형 최다 지역",   top_manp_sgg,         f"{top_manp_cnt}개교",
+         "👥", "#F3E8FF", "#8E44AD"),
     ]
 
     cols = st.columns(4, gap="small")
@@ -2186,33 +2186,12 @@ def show_simulation(df: pd.DataFrame):
                 "인력 취약형 학교",
                 "접근성 보완형 학교",
                 "우선지원점수 상위 20개교",
-                "특정 학교 선택",
             ]
             target_sel = st.radio(
                 "대상 선택", target_options,
                 label_visibility="collapsed",
             )
-
-            # 특정 학교 선택 시 selectbox 표시
             school_code_sel = None
-            if target_sel == "특정 학교 선택":
-                df_s = df.sort_values("priority_score", ascending=False).reset_index(drop=True)
-                base_labels = df_s.apply(
-                    lambda r: f"{r['school_name']} ({r['sigungu']})", axis=1
-                ).tolist()
-                from collections import Counter
-                cnt = Counter(base_labels)
-                seen: dict = {}
-                sch_opts = []
-                for lbl, code in zip(base_labels, df_s["school_code"].tolist()):
-                    if cnt[lbl] > 1:
-                        seen[lbl] = seen.get(lbl, 0) + 1
-                        sch_opts.append(f"{lbl} [{code}]")
-                    else:
-                        sch_opts.append(lbl)
-                sch_codes = df_s["school_code"].tolist()
-                sel_sch = st.selectbox("학교 선택", sch_opts, label_visibility="collapsed")
-                school_code_sel = sch_codes[sch_opts.index(sel_sch)]
 
     with pol_col:
         with st.container(border=True):
@@ -2251,7 +2230,6 @@ def show_simulation(df: pd.DataFrame):
         "인력 취약형 학교":   df[grp_col] == "인력 취약형",
         "접근성 보완형 학교": df[grp_col] == "접근성 보완형",
         "우선지원점수 상위 20개교": df["priority_score"].rank(ascending=False) <= 20,
-        "특정 학교 선택": df["school_code"] == school_code_sel if school_code_sel else pd.Series([False] * len(df), index=df.index),
     }
     mask = target_map.get(target_sel, pd.Series([False] * len(df), index=df.index))
     n_target = int(mask.sum())
