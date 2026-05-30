@@ -1530,11 +1530,13 @@ def _render_school_info_card(row: pd.Series):
     )
     with st.container(border=True):
         st.markdown(
+            f"<div style='min-height:300px;'>"
             f"<div style='font-size:1.0rem;font-weight:700;color:#1E3A5F;"
             f"margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #2E5FA3;'>"
             f"🏫 {_v('school_name')}</div>"
             + rows_html + badge_html +
-            "<div style='margin-bottom:10px;'></div>",
+            "<div style='margin-bottom:10px;'></div>"
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -1578,25 +1580,25 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
         # 2x2 그리드 — 1행
         r1c1, r1c2 = st.columns(2, gap="small")
         with r1c1:
-            st.markdown(_card("#1ABC9C", "CSI", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "120px"),
+            st.markdown(_card("#1ABC9C", "CSI", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "125px"),
                         unsafe_allow_html=True)
         with r1c2:
-            st.markdown(_card("#E67E22", "CDI", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "120px"),
+            st.markdown(_card("#E67E22", "CDI", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "125px"),
                         unsafe_allow_html=True)
         # 행 간격
         st.markdown("<div style='margin:22px 0;'></div>", unsafe_allow_html=True)
         # 2x2 그리드 — 2행
         r2c1, r2c2 = st.columns(2, gap="small")
         with r2c1:
-            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "120px"),
+            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "125px"),
                         unsafe_allow_html=True)
         with r2c2:
-            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "120px"),
+            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "125px"),
                         unsafe_allow_html=True)
 
     with sg_col:
         # 2x2 전체 높이(115px × 2 + gap 12px + spacer 20px ≈ 262px)에 맞춘 단일 카드
-        st.markdown(_card(scolor, "정책전략 유형", sg, "", "254px"),
+        st.markdown(_card(scolor, "정책전략 유형", sg, "", "274px"),
                     unsafe_allow_html=True)
 
 
@@ -1942,7 +1944,7 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
                 near_layer = pdk.Layer(
                     "ScatterplotLayer", data=near_df,
                     get_position=["lon", "lat"], get_color="color",
-                    get_radius=1400, pickable=True, opacity=0.95,
+                    get_radius=1000, pickable=True, opacity=0.95,
                     stroked=True, filled=True,
                     line_width_min_pixels=3, get_line_color=[255, 255, 255, 230],
                 )
