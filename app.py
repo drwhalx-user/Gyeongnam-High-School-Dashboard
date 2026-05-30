@@ -3918,10 +3918,6 @@ def show_optimization_sim():
 
     # ── AI 정책 제안 탭 안내 ────────────────────────────────────────────────
     st.markdown(
-        "<div style='background:#F7FAFC;border:1px solid #E2E8F0;"
-        "padding:8px 14px;border-radius:6px;font-size:0.74rem;color:#4A5568;"
-        "margin-top:8px;'>"
-        "💡 정책 해석 및 AI 브리핑은 <b>AI 기반 정책 제안</b> 탭에서 확인하세요.</div>",
         unsafe_allow_html=True,
     )
 
@@ -4907,63 +4903,6 @@ def show_data_description(df: pd.DataFrame):
             )
 
     # ── 정책 적합도 점수 설명 섹션 ──────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
-            "🤖 14. AI 추천 정책 – 정책별 적합도 점수 산출 기준</div>",
-            unsafe_allow_html=True,
-        )
-        fit_formula = [
-            ("전문상담교사 배치 또는 순회상담 연계",
-             "0.50×(1−상담인력공급) + 0.25×수요규모 + 0.25×우선지원필요도",
-             "상담인력이 부족하고 수요가 높을수록 적합도 높음"),
-            ("Wee클래스 신설 또는 운영 보완",
-             "0.60×(1−Wee클래스점수) + 0.20×우선지원필요도 + 0.20×상담이용률",
-             "Wee클래스 미운영이고 이용 수요가 높을수록 적합도 높음"),
-            ("Wee센터 연계 강화",
-             "0.60×(1−Wee센터접근성) + 0.20×우선지원필요도 + 0.20×상담이용률",
-             "Wee센터 접근성이 낮고 이용 수요가 높을수록 적합도 높음"),
-            ("학교폭력 피해 관련 상담지원 강화",
-             "0.60×학교폭력위험 + 0.20×상담이용률 + 0.20×우선지원필요도",
-             "학교폭력 위험 점수가 높을수록 적합도 높음"),
-            ("고수요 상담 프로그램 확대",
-             "0.40×수요규모 + 0.40×상담이용률 + 0.20×우선지원필요도",
-             "학생 수 규모와 실제 상담 이용이 모두 높을수록 적합도 높음"),
-            ("현 수준 유지 및 정기 모니터링",
-             "0.50×CSI + 0.30×(1−우선지원필요도) + 0.20×(1−학교폭력위험)",
-             "공급이 충분하고 긴급성이 낮을수록 적합도 높음"),
-        ]
-        rows_html = "".join(
-            f"<tr>"
-            f"<td style='padding:6px 8px;font-size:0.75rem;font-weight:700;color:#2E5FA3;"
-            f"border-bottom:1px solid #F0F4F8;white-space:nowrap;'>{name}</td>"
-            f"<td style='padding:6px 8px;font-size:0.70rem;color:#4A5568;"
-            f"border-bottom:1px solid #F0F4F8;font-family:monospace;'>{formula}</td>"
-            f"<td style='padding:6px 8px;font-size:0.70rem;color:#718096;"
-            f"border-bottom:1px solid #F0F4F8;'>{interp}</td>"
-            f"</tr>"
-            for name, formula, interp in fit_formula
-        )
-        st.markdown(
-            "<table style='width:100%;border-collapse:collapse;'>"
-            "<tr style='background:#EBF2FF;'>"
-            "<th style='padding:6px 8px;font-size:0.73rem;color:#1E3A5F;text-align:left;'>정책명</th>"
-            "<th style='padding:6px 8px;font-size:0.73rem;color:#1E3A5F;text-align:left;'>산식</th>"
-            "<th style='padding:6px 8px;font-size:0.73rem;color:#1E3A5F;text-align:left;'>해석</th>"
-            f"</tr>{rows_html}</table>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<div style='font-size:0.71rem;color:#718096;margin-top:8px;'>"
-            "· 우선지원필요도(priority_need_score) = priority_score의 Min-Max 정규화 (0~1)<br>"
-            "· 모든 점수는 0~1 범위로 clip 처리 | 점수가 높을수록 해당 정책 우선 검토 필요<br>"
-            "· 가중치는 분석 목적에 맞춘 운영 기준으로 전문가 자문을 거치지 않은 한계가 있음<br>"
-            "· 추천 결과는 실제 지원 확정이 아니라 정책 검토 우선순위 참고 자료임"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
     # ── AI 기반 우선배치 최적화 설명 ────────────────────────────────────────
     with st.container(border=True):
         st.markdown(
@@ -5083,48 +5022,6 @@ def show_data_description(df: pd.DataFrame):
                 st.markdown(
                     f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
                     f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>{lt}</div>",
-                    unsafe_allow_html=True,
-                )
-
-    # ── 외부 LLM AI 브리핑 설명 섹션 ────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
-            "🤖 16. 외부 LLM 기반 AI 브리핑 기능</div>",
-            unsafe_allow_html=True,
-        )
-        llm_cols = st.columns(2, gap="small")
-        with llm_cols[0]:
-            st.markdown(
-                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
-                "margin-bottom:6px;'>기능 설명</div>"
-                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
-                "· 본 대시보드는 <b>Google Gemini API</b>를 활용하여 학교별 분석 결과와 "
-                "최적화 시뮬레이션 결과를 자연어 브리핑으로 변환한다.<br>"
-                "· LLM은 <b>새로운 점수를 계산하거나 실제 지원 여부를 판단하지 않는다.</b><br>"
-                "· LLM은 이미 계산된 정량 지표(CSI·CDI·PS·정책별 적합도·최적화 결과)를 "
-                "바탕으로 자연어 설명문을 생성하는 <b>해석 보조 도구</b>이다.<br>"
-                "· API 호출 실패 시 규칙 기반 브리핑으로 자동 대체된다.<br>"
-                "· 민감한 개인정보나 API 키는 LLM에 전달하지 않는다."
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        with llm_cols[1]:
-            st.markdown(
-                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
-                "margin-bottom:6px;'>유의사항</div>",
-                unsafe_allow_html=True,
-            )
-            for item in [
-                "LLM이 생성한 문장은 정책 확정 근거가 아닌 참고 자료임",
-                "API 키는 Streamlit secrets를 통해 관리하며, 코드에 직접 기재하지 않음",
-                "LLM 호출은 버튼 클릭 시에만 수행 (앱 로딩 시 자동 호출 없음)",
-                "결과는 정책 검토용이며 최종 의사결정 시 현장 의견·예산·인력 상황을 함께 고려해야 함",
-            ]:
-                st.markdown(
-                    f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
-                    f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>{item}</div>",
                     unsafe_allow_html=True,
                 )
 
