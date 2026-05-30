@@ -192,6 +192,60 @@ def _hex_to_rgba(hex_color: str, alpha: int = 210) -> list:
 PRIORITY_COLORS_PYDECK = {k: _hex_to_rgba(v) for k, v in PRIORITY_COLORS.items()}
 DEFAULT_COLOR_PYDECK   = [149, 165, 166, 200]
 
+# Wee센터 마커 색상: 진한 남색
+WEE_CENTER_COLOR       = [26, 35, 126, 220]   # #1A237E
+WEE_CENTER_NEAR_COLOR  = [243, 156, 18, 240]  # #F39C12 (가장 가까운 센터 강조)
+
+# Wee센터 좌표 파일 경로
+_WEE_CENTER_PATH = ROOT / "data" / "processed" / "gyeongnam_wee_centers_geocoded_2025.csv"
+
+
+@st.cache_data(show_spinner=False)
+def _load_wee_centers():
+    """Wee센터 위경도 데이터 로드 (없으면 None 반환)."""
+    if not _WEE_CENTER_PATH.exists():
+        return None, "파일 없음"
+    try:
+        df = pd.read_csv(_WEE_CENTER_PATH, encoding="utf-8-sig")
+        lat_col = next((c for c in df.columns if "latitude"  in c.lower()), None)
+        lon_col = next((c for c in df.columns if "longitude" in c.lower()), None)
+        if lat_col is None or lon_col is None:
+            return None, f"위경도 컬럼 없음 (확인된 컬럼: {list(df.columns)})"
+        if lat_col != "wee_center_latitude":
+            df = df.rename(columns={lat_col: "wee_center_latitude"})
+        if lon_col != "wee_center_longitude":
+            df = df.rename(columns={lon_col: "wee_center_longitude"})
+        n_before = len(df)
+        df = df.dropna(subset=["wee_center_latitude", "wee_center_longitude"])
+        n_miss = n_before - len(df)
+        return df.reset_index(drop=True), f"로드 완료: {len(df)}개 ({n_miss}개 결측 제외)"
+    except Exception as e:
+        return None, f"로드 오류: {e}"
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """두 위경도 간 직선거리(km) — Haversine 공식."""
+    import math
+    R = 6371.0
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    dφ = math.radians(lat2 - lat1)
+    dλ = math.radians(lon2 - lon1)
+    a  = math.sin(dφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(dλ/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _nearest_wee_center(school_lat: float, school_lon: float, wee_df: pd.DataFrame):
+    """가장 가까운 Wee센터 행과 거리(km)를 반환."""
+    if wee_df is None or wee_df.empty:
+        return None, None
+    dists = wee_df.apply(
+        lambda r: _haversine_km(school_lat, school_lon,
+                                r["wee_center_latitude"], r["wee_center_longitude"]),
+        axis=1,
+    )
+    idx = dists.idxmin()
+    return wee_df.loc[idx], round(float(dists[idx]), 2)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ── LLM 기반 AI 브리핑 함수 ──────────────────────────────────────────────────
@@ -545,7 +599,33 @@ def _render_map_section(df: pd.DataFrame):
 
         if has_latlon and n_valid >= 10:
             _render_school_pydeck_map(df)
-            st.caption(f"학교별 위경도 기반 ({n_valid}개교) · 점 색상: 우선지원등급 | 마우스를 올리면 상세 정보 표시")
+            wee_df, wee_msg = _load_wee_centers()
+            n_wee = len(wee_df) if wee_df is not None else 0
+            n_low_access = int((df["wee_center_access_score"] <= 0.4).sum()) \
+                if "wee_center_access_score" in df.columns else 0
+            caption_wee = f" · Wee센터 {n_wee}개소 표시" if n_wee > 0 else ""
+            st.caption(
+                f"학교별 위경도 기반 ({n_valid}개교){caption_wee} · "
+                f"점 색상: 우선지원등급 | 마우스를 올리면 상세 정보 표시"
+            )
+            if n_wee > 0 or n_low_access > 0:
+                wc1, wc2 = st.columns(2, gap="small")
+                with wc1:
+                    st.markdown(
+                        f"<div style='background:white;border-radius:8px;padding:8px 12px;"
+                        f"box-shadow:0 1px 4px rgba(0,0,0,0.07);border-left:3px solid #1A237E;'>"
+                        f"<div style='font-size:0.68rem;color:#718096;'>지도 내 Wee센터</div>"
+                        f"<div style='font-size:1.1rem;font-weight:700;color:#1A237E;'>{n_wee}개소</div>"
+                        f"</div>", unsafe_allow_html=True,
+                    )
+                with wc2:
+                    st.markdown(
+                        f"<div style='background:white;border-radius:8px;padding:8px 12px;"
+                        f"box-shadow:0 1px 4px rgba(0,0,0,0.07);border-left:3px solid #E67E22;'>"
+                        f"<div style='font-size:0.68rem;color:#718096;'>Wee센터 접근성 낮은 학교 (≤0.4)</div>"
+                        f"<div style='font-size:1.1rem;font-weight:700;color:#E67E22;'>{n_low_access}개교</div>"
+                        f"</div>", unsafe_allow_html=True,
+                    )
         else:
             _render_sigungu_map(df)
 
@@ -603,13 +683,49 @@ def _render_school_pydeck_map(df: pd.DataFrame):
                 "padding": "8px",
             },
         }
+        # Wee센터 레이어 추가
+        layers = [layer]
+        wee_df, wee_msg = _load_wee_centers()
+        if wee_df is not None and not wee_df.empty:
+            wee_map = wee_df.copy()
+            wee_map["label"] = wee_map.get("wee_center_name", pd.Series(["Wee센터"]*len(wee_map)))
+            wee_map["addr"]  = wee_map.get("address", pd.Series([""]*len(wee_map))).fillna("")
+            wee_map["color"] = [WEE_CENTER_COLOR] * len(wee_map)
+            wee_layer = pdk.Layer(
+                "ScatterplotLayer", data=wee_map,
+                get_position=["wee_center_longitude", "wee_center_latitude"],
+                get_color="color",
+                get_radius=1200,
+                pickable=True, opacity=0.92, stroked=True, filled=True,
+                line_width_min_pixels=2, get_line_color=[255, 255, 255, 200],
+            )
+            layers.append(wee_layer)
+            wee_tooltip = {
+                "html": (
+                    "<div style='font-family:sans-serif;font-size:13px;"
+                    "line-height:1.6;padding:4px;'>"
+                    "<b>🏢 {label}</b><br/>"
+                    "시군구: {sigungu}<br/>"
+                    "주소: {addr}"
+                    "</div>"
+                ),
+                "style": {"backgroundColor": "#1A237E", "color": "white",
+                          "borderRadius": "6px", "padding": "8px"},
+            }
+
         deck = pdk.Deck(
-            layers=[layer],
+            layers=layers,
             initial_view_state=view_state,
-            tooltip=tooltip,
+            tooltip=tooltip if wee_df is None else wee_tooltip,
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         )
         st.pydeck_chart(deck, width="stretch")
+        st.markdown(
+            "<div style='font-size:0.70rem;color:#718096;margin-top:4px;'>"
+            "🔵 소형 마커: 일반고 (우선지원등급별 색상) &nbsp;|&nbsp; "
+            "🔷 대형 남색 마커: Wee센터 위치</div>",
+            unsafe_allow_html=True,
+        )
 
     except Exception as e:
         st.warning(f"지도 오류: {e}")
@@ -1044,8 +1160,27 @@ def _render_regional_map(agg: pd.DataFrame):
                 tickfont=dict(size=9),
             ),
         )
+        # Wee센터 레이어 추가
+        wee_df, _ = _load_wee_centers()
+        if wee_df is not None and not wee_df.empty:
+            wee_name = wee_df.get("wee_center_name", pd.Series(["Wee센터"]*len(wee_df))).fillna("Wee센터")
+            wee_sgg  = wee_df.get("sigungu", pd.Series([""]*len(wee_df))).fillna("")
+            fig.add_trace(
+                go.Scattermapbox(
+                    lat=wee_df["wee_center_latitude"],
+                    lon=wee_df["wee_center_longitude"],
+                    mode="markers",
+                    marker=dict(size=14, color="#1A237E", opacity=0.9,
+                                symbol="circle"),
+                    text=wee_name + " (" + wee_sgg + ")",
+                    hovertemplate="<b>🏢 %{text}</b><extra>Wee센터</extra>",
+                    name="Wee센터",
+                    showlegend=True,
+                )
+            )
+
         st.plotly_chart(fig, width="stretch")
-        st.caption("버블 크기: 학교 수 · 색상: 평균 우선지원점수 (파랑→빨강: 낮음→높음)")
+        st.caption("버블: 시군구별 학교수·평균PS · 🔵 남색 점: Wee센터 위치 · 시군구별 평균 우선지원 수준과 Wee센터 분포를 함께 확인하세요.")
 
 
 # ── 주요 시군별 지수 비교 grouped bar ─────────────────────────────────────────
@@ -1878,7 +2013,7 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
         st.markdown(
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
-            "📍 학교 위치</div>",
+            "📍 학교 위치 및 인근 Wee센터</div>",
             unsafe_allow_html=True,
         )
         try:
@@ -1899,23 +2034,86 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
             "sigungu":     str(row.get("sigungu", "")),
             "lat": lat, "lon": lon, "color": color,
         }])
-        layer = pdk.Layer(
+        school_layer = pdk.Layer(
             "ScatterplotLayer", data=map_df,
             get_position=["lon", "lat"], get_color="color",
-            get_radius=600, pickable=True, opacity=0.9, stroked=True, filled=True,
+            get_radius=700, pickable=True, opacity=0.9, stroked=True, filled=True,
             line_width_min_pixels=2, get_line_color=[255, 255, 255, 200],
             auto_highlight=True,
         )
-        view  = pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=0)
+        layers = [school_layer]
+
+        # Wee센터 레이어 추가
+        wee_df, _ = _load_wee_centers()
+        nearest_row, nearest_dist = None, None
+        if wee_df is not None and not wee_df.empty:
+            nearest_row, nearest_dist = _nearest_wee_center(lat, lon, wee_df)
+            # 전체 Wee센터 (일반)
+            wee_map = wee_df.copy()
+            wee_map["label"] = wee_map.get("wee_center_name", pd.Series(["Wee센터"]*len(wee_map)))
+            wee_map["addr"]  = wee_map.get("address", pd.Series([""]*len(wee_map))).fillna("")
+            wee_map["color"] = [WEE_CENTER_COLOR] * len(wee_map)
+            wee_layer = pdk.Layer(
+                "ScatterplotLayer", data=wee_map,
+                get_position=["wee_center_longitude", "wee_center_latitude"],
+                get_color="color", get_radius=1000, pickable=True, opacity=0.85,
+                stroked=True, filled=True,
+                line_width_min_pixels=2, get_line_color=[255, 255, 255, 200],
+            )
+            layers.append(wee_layer)
+            # 가장 가까운 Wee센터 강조 레이어
+            if nearest_row is not None:
+                near_df = pd.DataFrame([{
+                    "label": str(nearest_row.get("wee_center_name", "Wee센터")),
+                    "addr":  str(nearest_row.get("address", "")),
+                    "lat":   float(nearest_row["wee_center_latitude"]),
+                    "lon":   float(nearest_row["wee_center_longitude"]),
+                    "color": WEE_CENTER_NEAR_COLOR,
+                }])
+                near_layer = pdk.Layer(
+                    "ScatterplotLayer", data=near_df,
+                    get_position=["lon", "lat"], get_color="color",
+                    get_radius=1400, pickable=True, opacity=0.95,
+                    stroked=True, filled=True,
+                    line_width_min_pixels=3, get_line_color=[255, 255, 255, 230],
+                )
+                layers.append(near_layer)
+
+        view  = pdk.ViewState(latitude=lat, longitude=lon, zoom=10, pitch=0)
         deck  = pdk.Deck(
-            layers=[layer], initial_view_state=view,
+            layers=layers, initial_view_state=view,
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
             tooltip={
-                "html": "<b>{school_name}</b><br/>{sigungu}",
+                "html": "<b>{school_name}{label}</b><br/>{sigungu}{addr}",
                 "style": {"backgroundColor": "#1E3A5F", "color": "white", "fontSize": "12px"},
             },
         )
         st.pydeck_chart(deck, width="stretch", height=height)
+        st.markdown(
+            "<div style='font-size:0.68rem;color:#718096;margin-top:3px;'>"
+            "🔵 등급색 마커: 선택 학교 &nbsp;|&nbsp; "
+            "🔷 남색 마커: Wee센터 &nbsp;|&nbsp; "
+            "🟠 주황 마커: 가장 가까운 Wee센터</div>",
+            unsafe_allow_html=True,
+        )
+
+        # 가장 가까운 Wee센터 정보 카드
+        if nearest_row is not None and nearest_dist is not None:
+            access_score = row.get("wee_center_access_score", None)
+            access_str = f"{float(access_score):.3f}" if pd.notna(access_score) else "확인 필요"
+            st.markdown(
+                f"<div style='background:#EBF2FF;border-left:3px solid #1A237E;"
+                f"padding:8px 12px;border-radius:4px;margin-top:6px;"
+                f"font-size:0.74rem;color:#1E3A5F;'>"
+                f"🏢 <b>가장 가까운 Wee센터:</b> "
+                f"{nearest_row.get('wee_center_name', '확인 필요')} "
+                f"({nearest_row.get('sigungu', '')}) &nbsp;|&nbsp; "
+                f"직선거리: <b>{nearest_dist}km</b> &nbsp;|&nbsp; "
+                f"접근성 점수: <b>{access_str}</b></div>"
+                f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:2px;'>"
+                f"※ 직선거리 기준이며 실제 이동시간이나 교통 접근성을 직접 의미하지 않습니다.</div>",
+                unsafe_allow_html=True,
+            )
 
 
 # ── 유사 학교 비교 표 ─────────────────────────────────────────────────────────
@@ -4035,7 +4233,9 @@ def show_data_description(df: pd.DataFrame):
                 "<div style='margin-bottom:8px;'><div style='font-size:0.74rem;font-weight:700;color:#1ABC9C;'>· Wee센터 접근성</div>"
                 "<div style='font-size:0.70rem;color:#718096;padding-left:8px;line-height:1.5;'>직선거리: 5km↓→1.0 | 5~10km→0.7 | 10~15km→0.4 | 15km↑→0.1</div></div>"
                 "<div style='font-size:0.68rem;color:#A0AEC0;margin-top:4px;'>"
-                "※ Wee센터 접근성은 직선거리 기준이며 실제 이동시간을 의미하지 않습니다.</div>"
+                "※ Wee센터 접근성은 위경도 기반 직선거리 기준 (실제 도로 이동시간·대중교통 미반영)<br>"
+                "※ 대시보드 지도에서 일반고 위치와 경남 Wee센터 19개소 위치를 함께 표시합니다."
+                "</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
