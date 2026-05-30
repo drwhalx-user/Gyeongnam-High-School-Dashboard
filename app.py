@@ -408,7 +408,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
     # 대시보드 소개 카드
     with st.container(border=True):
         st.markdown(
-            "<div style='display:flex;gap:18px;align-items:flex-start;'>"
+            "<div style='display:flex;gap:18px;align-items:flex-start;min-height:110px;'>"
             "<div style='flex:1;'>"
             "<div style='font-size:0.82rem;font-weight:700;color:#1E3A5F;margin-bottom:6px;'>"
             "📌 이 대시보드는 무엇인가요?</div>"
@@ -430,7 +430,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             unsafe_allow_html=True,
         )
 
-    st.markdown("<div style='margin:12px 0;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin:8px 0;'></div>", unsafe_allow_html=True)
 
     # ── 지표 카드 5개 ─────────────────────────────────────────────────────────
     _render_metric_cards(df, df_all)
@@ -1417,15 +1417,16 @@ def show_school_search(df: pd.DataFrame):
     sido_col1, sido_col2, sido_col3 = st.columns([1, 1, 2], gap="small")
 
     # 1단계: 시(sido) 선택 — 가나다 순
-    sido_list = sorted(df["sido"].dropna().unique().tolist())
+    sido_list = ["경상남도교육청"]
     with sido_col1:
-        sel_sido = st.selectbox("📍 시 선택", sido_list, key="search_sido")
+        sel_sido_label = st.selectbox("🏫 교육청 선택", sido_list, key="search_sido")
+        sel_sido = df["sido"].dropna().unique()[0] if not df["sido"].dropna().empty else sel_sido_label
 
     # 2단계: 군(sigungu) 선택 — 선택한 시에 속하는 시군구, 가나다 순
     df_by_sido = df[df["sido"] == sel_sido]
     sgg_list = sorted(df_by_sido["sigungu"].dropna().unique().tolist())
     with sido_col2:
-        sel_sgg = st.selectbox("🗺️ 시군구 선택", sgg_list, key="search_sgg")
+        sel_sgg = st.selectbox("📍 시군구 선택", sgg_list, key="search_sgg")
 
     # 3단계: 학교 선택 — 선택한 시군구에 속하는 학교, 가나다 순
     df_by_sgg = df_by_sido[df_by_sido["sigungu"] == sel_sgg].sort_values("school_name").reset_index(drop=True)
@@ -1555,6 +1556,7 @@ def _render_school_info_card(row: pd.Series, nearest_wee=None, nearest_dist=None
             f"margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #2E5FA3;'>"
             f"🏫 {_v('school_name')}</div>"
             + rows_html + badge_html +
+            "<div style='margin-bottom:2px;'></div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -1617,7 +1619,7 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
 
     with sg_col:
         # 2x2 전체 높이(115px × 2 + gap 12px + spacer 20px ≈ 262px)에 맞춘 단일 카드
-        st.markdown(_card(scolor, "정책전략 유형", sg, "", "282px"),
+        st.markdown(_card(scolor, "정책전략 유형", sg, "", "280px"),
                     unsafe_allow_html=True)
 
 
@@ -1983,7 +1985,8 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
             "<div style='font-size:0.68rem;color:#718096;margin-top:3px;'>"
             "등급색: 선택 학교 &nbsp;|&nbsp; "
             "남색: Wee센터 &nbsp;|&nbsp; "
-            "주황: 가장 가까운 Wee센터</div>",
+            "주황: 가장 가까운 Wee센터</div>"
+            "<div style='margin-bottom:3px;'></div>",
             unsafe_allow_html=True,
         )
 
