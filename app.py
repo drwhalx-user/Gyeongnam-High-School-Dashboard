@@ -1548,7 +1548,7 @@ def _render_school_info_card(row: pd.Series, nearest_wee=None, nearest_dist=None
     )
     with st.container(border=True):
         st.markdown(
-            f"<div style='min-height:300px;'>"
+            f"<div>"
             f"<div style='font-size:1.0rem;font-weight:700;color:#1E3A5F;"
             f"margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #2E5FA3;'>"
             f"🏫 {_v('school_name')}</div>"
