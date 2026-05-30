@@ -392,7 +392,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
     # ── 헤더 ─────────────────────────────────────────────────────────────────
     st.markdown(
         "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 2px 0;font-weight:700;'>"
-        "경상남도 고등학교 상담지원 인프라 수급 불균형 분석 및 의사결정 대시보드"
+        "경상남도 일반고등학교 상담 인프라 수급 현황 진단 및 의사결정 지원 대시보드"
         "</h1>"
         "<p style='color:#718096;font-size:0.78rem;margin:0 0 10px 0;'>"
         "상담공급지수(CSI) · 상담수요지수(CDI) · 우선지원점수 기반 학교별 우선순위 분석 "
@@ -499,7 +499,7 @@ def _render_map_section(df: pd.DataFrame):
     with st.container(border=True):
         st.markdown(
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "margin-bottom:6px;'>📍 경상남도 학교 분포 현황</div>",
+            "margin-bottom:6px;'>📍 경상남도교육청 관내 일반고등학교 분포 현황</div>",
             unsafe_allow_html=True)
 
         # 범례 (우선지원등급 + Wee센터)
@@ -558,6 +558,7 @@ def _render_map_section(df: pd.DataFrame):
                     )
         else:
             _render_sigungu_map(df)
+        st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
 
 
 # ── pydeck 학교 산점도 ─────────────────────────────────────────────────────────
@@ -4902,68 +4903,12 @@ def show_data_description(df: pd.DataFrame):
                 unsafe_allow_html=True,
             )
 
-    # ── 정책 적합도 점수 설명 섹션 ──────────────────────────────────────────
-    # ── AI 기반 우선배치 최적화 설명 ────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
-            "🏆 15. AI 기반 우선배치 최적화 시뮬레이션 방식</div>",
-            unsafe_allow_html=True,
-        )
-        opt_cols = st.columns(2, gap="small")
-        with opt_cols[0]:
-            st.markdown(
-                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
-                "margin-bottom:6px;'>목적 및 방식</div>"
-                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
-                "· 제한된 자원(전문상담교사 배치 수, Wee클래스 신설 수, Wee센터 연계 수)을 "
-                "어느 학교에 우선 적용해야 우선지원점수(PS) 개선효과가 최대인지 자동 추천<br>"
-                "· <b>Greedy Optimization</b> 방식: 각 정책별 후보를 개선효과 내림차순 정렬 → 상위 N개 선택<br>"
-                "· 전역 최적해를 보장하는 수리최적화가 아니라 해석 가능성 우선의 탐욕 알고리즘<br>"
-                "· 개선효과 = before_PS − after_PS (클수록 공급 부족 완화 효과 큼)"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
-                "margin:10px 0 6px;'>정책별 적용 방식</div>"
-                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
-                "· 전문상담교사 배치: staff_score &lt; 0.4 → 0.4 / 0.4~0.7 → 0.7<br>"
-                "· Wee클래스 신설: wee_class_score → 1.0<br>"
-                "· Wee센터 연계: wee_center_score &lt; 0.7 → 0.7<br>"
-                "· after_CSI = (변경된 3개 하위점수 평균)<br>"
-                "· after_PS = CDI − after_CSI"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-        with opt_cols[1]:
-            st.markdown(
-                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
-                "margin-bottom:6px;'>한계 및 유의사항</div>",
-                unsafe_allow_html=True,
-            )
-            limits = [
-                "전역 최적해를 보장하지 않으며, 자원 비용 차이를 정교하게 반영하지 않음",
-                "실제 인력 수급 가능 여부, 예산 제약, 학교 현장 의견은 반영되지 않음",
-                "하위 점수가 구간화·이진화되어 있어 개선효과가 단순화될 수 있음",
-                "CDI(수요 지표)는 정책 적용 시에도 변경되지 않음",
-                "추천 결과는 실제 정책 배치 확정이 아니라 정책 검토 우선순위 참고 자료",
-            ]
-            for lt in limits:
-                st.markdown(
-                    f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
-                    f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>"
-                    f"{lt}</div>",
-                    unsafe_allow_html=True,
-                )
-
     # ── PuLP 자원배치 시나리오 설명 섹션 ─────────────────────────────────────
     with st.container(border=True):
         st.markdown(
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
-            "📐 16. 제약조건 기반 상담지원 자원배치 시나리오</div>",
+            "📐 14. 제약조건 기반 상담지원 자원배치 시나리오</div>",
             unsafe_allow_html=True,
         )
         pulp_cols = st.columns(2, gap="small")
