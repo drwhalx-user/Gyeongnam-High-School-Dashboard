@@ -1603,20 +1603,20 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
         # 2x2 그리드 — 1행
         r1c1, r1c2 = st.columns(2, gap="small")
         with r1c1:
-            st.markdown(_card("#1ABC9C", "상담공급점수(CSI)", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "132px"),
+            st.markdown(_card("#1ABC9C", "상담공급점수(CSI)", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "133px"),
                         unsafe_allow_html=True)
         with r1c2:
-            st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "132px"),
+            st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "133px"),
                         unsafe_allow_html=True)
         # 행 간격
         st.markdown("<div style='margin:22px 0;'></div>", unsafe_allow_html=True)
         # 2x2 그리드 — 2행
         r2c1, r2c2 = st.columns(2, gap="small")
         with r2c1:
-            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "132px"),
+            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "133px"),
                         unsafe_allow_html=True)
         with r2c2:
-            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "132px"),
+            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "133px"),
                         unsafe_allow_html=True)
 
     with sg_col:
