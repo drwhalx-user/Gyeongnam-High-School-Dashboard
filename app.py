@@ -428,7 +428,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분<br>"
             "ℹ️ <b>데이터 설명</b>: 지표 산출 기준 · 방법론 · 한계 및 유의사항"
             "</div></div></div>"
-            "<div style='margin-bottom:4px;'></div>",
+            "<div style='margin-bottom:10px;'></div>",
             unsafe_allow_html=True,
         )
 
