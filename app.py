@@ -354,7 +354,7 @@ def render_sidebar(df: pd.DataFrame):
     # 메뉴
     tabs = [
         "📋 현황 개요", "🗺️ 지역별 분석", "🔍 학교 검색",
-        "📊 유형 분석",  "💡 AI 기반 정책 제안",
+        "📊 유형 분석",
         "📐 자원배치 시뮬레이션", "ℹ️ 데이터 설명",
     ]
     selected = sb.radio("메뉴", tabs, label_visibility="collapsed")
@@ -423,9 +423,8 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             "<div style='font-size:0.74rem;color:#4A5568;line-height:1.9;'>"
             "📋 <b>현황 개요</b>: 전체 학교 분포 및 주요 지표 요약<br>"
             "🗺️ <b>지역별 분석</b>: 시군구 단위 상담 인프라 비교<br>"
-            "🔍 <b>학교 검색</b>: 개별 학교 진단 및 지표 상세 확인<br>"
+            "🔍 <b>학교 검색</b>: 개별 학교 진단 · 지표 상세 · 맞춤 정책 제안<br>"
             "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
-            "💡 <b>AI 기반 정책 제안</b>: 학교별 맞춤 정책 추천<br>"
             "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분"
             "</div></div></div>",
             unsafe_allow_html=True,
@@ -1480,27 +1479,7 @@ def show_school_search(df: pd.DataFrame):
 
     with right_col:
         _render_policy_feedback(row)
-        # ── 1순위 추천 정책 간단 표시 + AI 정책 제안 탭 안내 ────────────────
-        _p1 = (_row_scores.get("recommended_policy_1", "") if _row_scores is not None else
-               row.get("recommended_policy_1", ""))
-        _s1 = (_row_scores.get("recommended_policy_1_score", "") if _row_scores is not None else "")
-        if _p1:
-            _s1_str = f" (적합도 {float(_s1):.3f})" if _s1 and str(_s1) != "nan" else ""
-            st.markdown(
-                f"<div style='background:#EBF2FF;border-left:3px solid #2E5FA3;"
-                f"padding:8px 12px;border-radius:4px;font-size:0.76rem;color:#1E3A5F;"
-                f"margin-bottom:6px;'>"
-                f"🤖 <b>AI 추천 1순위:</b> {_p1}{_s1_str}</div>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(
-            "<div style='background:#F7FAFC;border:1px solid #E2E8F0;"
-            "padding:8px 12px;border-radius:6px;font-size:0.74rem;color:#4A5568;"
-            "margin-bottom:6px;'>"
-            "📋 정책별 적합도 점수, 추천 근거, AI 브리핑은 "
-            "<b>💡 AI 기반 정책 제안</b> 탭에서 확인하세요.</div>",
-            unsafe_allow_html=True,
-        )
+        _render_policy_fit_card(_row_scores)
         _render_school_detail_table(row)
 
     # ── footer ────────────────────────────────────────────────────────────────
@@ -5775,8 +5754,6 @@ def main():
         show_school_search(df)
     elif tab_key == "유형 분석":
         show_type_analysis(df)
-    elif tab_key == "AI 기반 정책 제안":
-        show_ai_policy(df)
     elif tab_key == "자원배치 시뮬레이션":
         show_simulation(df)
     elif tab_key == "데이터 설명":
