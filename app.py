@@ -1457,9 +1457,20 @@ def show_school_search(df: pd.DataFrame):
 
 
     # ── Row 1: 기본 정보 카드 | 학교 위치 지도(정사각) | KPI 카드 ────────────
+    # 가장 가까운 Wee센터 미리 계산
+    _wee_df_pre, _ = _load_wee_centers()
+    _near_row_pre, _near_dist_pre = None, None
+    try:
+        _lat_pre = float(row.get("school_latitude", 0) or 0)
+        _lon_pre = float(row.get("school_longitude", 0) or 0)
+        if _lat_pre != 0 and _lon_pre != 0 and _wee_df_pre is not None:
+            _near_row_pre, _near_dist_pre = _nearest_wee_center(_lat_pre, _lon_pre, _wee_df_pre)
+    except Exception:
+        pass
+
     info_col, map_col, kpi_col = st.columns([1.3, 1.0, 1.7], gap="small")
     with info_col:
-        _render_school_info_card(row)
+        _render_school_info_card(row, nearest_wee=_near_row_pre, nearest_dist=_near_dist_pre)
     with map_col:
         _render_single_school_map(row, height=192)
     with kpi_col:
@@ -1493,7 +1504,7 @@ def show_school_search(df: pd.DataFrame):
 
 
 # ── 학교 기본 정보 카드 ────────────────────────────────────────────────────────
-def _render_school_info_card(row: pd.Series):
+def _render_school_info_card(row: pd.Series, nearest_wee=None, nearest_dist=None):
     def _v(col, default="확인 필요"):
         val = row.get(col, None)
         if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -1505,12 +1516,19 @@ def _render_school_info_card(row: pd.Series):
     sgroup = _v("policy_strategy_group")
     scolor = STRATEGY_COLORS.get(sgroup, "#718096")
 
+    # 가장 가까운 Wee센터 정보
+    wee_name = nearest_wee.get("wee_center_name", "확인 필요") if nearest_wee is not None else "-"
+    wee_sgg  = nearest_wee.get("sigungu", "") if nearest_wee is not None else ""
+    wee_dist = f"{nearest_dist}km" if nearest_dist is not None else "-"
+    wee_label = f"{wee_name} ({wee_sgg}) · {wee_dist}" if nearest_wee is not None else "-"
+
     info_rows = [
-        ("학교코드",      _v("school_code")),
-        ("시도",          _v("sido")),
-        ("시군구",        _v("sigungu")),
-        ("수요공급 유형", _v("supply_demand_type")),
-        ("매트릭스 유형", _v("supply_demand_matrix_3x3")),
+        ("학교코드",         _v("school_code")),
+        ("시도",             _v("sido")),
+        ("시군구",           _v("sigungu")),
+        ("수요공급 유형",    _v("supply_demand_type")),
+        ("매트릭스 유형",    _v("supply_demand_matrix_3x3")),
+        ("가장 가까운 Wee센터", wee_label),
     ]
     rows_html = "".join(
         f"<div style='display:flex;justify-content:space-between;align-items:center;"
@@ -1962,29 +1980,11 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
         st.pydeck_chart(deck, width="stretch", height=height)
         st.markdown(
             "<div style='font-size:0.68rem;color:#718096;margin-top:3px;'>"
-            "🔵 등급색 마커: 선택 학교 &nbsp;|&nbsp; "
-            "🔷 남색 마커: Wee센터 &nbsp;|&nbsp; "
-            "🟠 주황 마커: 가장 가까운 Wee센터</div>",
+            "🔵 등급색: 선택 학교 &nbsp;|&nbsp; "
+            "🔷 남색: Wee센터 &nbsp;|&nbsp; "
+            "🟠 주황: 가장 가까운 Wee센터</div>",
             unsafe_allow_html=True,
         )
-
-        # 가장 가까운 Wee센터 정보 카드
-        if nearest_row is not None and nearest_dist is not None:
-            access_score = row.get("wee_center_access_score", None)
-            access_str = f"{float(access_score):.3f}" if pd.notna(access_score) else "확인 필요"
-            st.markdown(
-                f"<div style='background:#EBF2FF;border-left:3px solid #1A237E;"
-                f"padding:8px 12px;border-radius:4px;margin-top:6px;"
-                f"font-size:0.74rem;color:#1E3A5F;'>"
-                f"🏢 <b>가장 가까운 Wee센터:</b> "
-                f"{nearest_row.get('wee_center_name', '확인 필요')} "
-                f"({nearest_row.get('sigungu', '')}) &nbsp;|&nbsp; "
-                f"직선거리: <b>{nearest_dist}km</b> &nbsp;|&nbsp; "
-                f"접근성 점수: <b>{access_str}</b></div>"
-                f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:2px;'>"
-                f"※ 직선거리 기준이며 실제 이동시간이나 교통 접근성을 직접 의미하지 않습니다.</div>",
-                unsafe_allow_html=True,
-            )
 
 
 # ── 유사 학교 비교 표 ─────────────────────────────────────────────────────────
