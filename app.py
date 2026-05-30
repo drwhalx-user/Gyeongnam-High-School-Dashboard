@@ -3693,13 +3693,14 @@ def show_pulp_scenario(df: pd.DataFrame):
     with map_col:
         _render_pulp_map(result_df)
 
-    g1, g2 = st.columns([1, 1], gap="small")
+    g1, g2, g3 = st.columns([1, 1, 1], gap="small")
     with g1:
         _render_pulp_policy_bar(result_df)
     with g2:
         _render_pulp_before_after_bar(result_df)
+    with g3:
+        _render_pulp_top10_bar(result_df)
 
-    _render_pulp_top10_bar(result_df)
     _render_pulp_policy_expander(result_df)
     _render_pulp_interpretation(result_df, params)
 
