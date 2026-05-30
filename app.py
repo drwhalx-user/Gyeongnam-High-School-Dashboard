@@ -577,7 +577,7 @@ def _render_map_section(df: pd.DataFrame):
             "margin-bottom:6px;'>📍 경상남도 학교 분포 현황</div>",
             unsafe_allow_html=True)
 
-        # 범례
+        # 범례 (우선지원등급 + Wee센터)
         legend_html = '<div class="legend-row">'
         for grade in PRIORITY_ORDER:
             if (df["priority_display"] == grade).sum() > 0:
@@ -586,6 +586,11 @@ def _render_map_section(df: pd.DataFrame):
                     f'<div class="legend-item">'
                     f'<span class="legend-dot" style="background:{c};"></span>'
                     f'{grade}</div>')
+        legend_html += (
+            '<div class="legend-item">'
+            '<span class="legend-dot" style="background:#1A237E;"></span>'
+            'Wee센터</div>'
+        )
         legend_html += '</div>'
         st.markdown(legend_html, unsafe_allow_html=True)
 
@@ -720,12 +725,6 @@ def _render_school_pydeck_map(df: pd.DataFrame):
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         )
         st.pydeck_chart(deck, width="stretch")
-        st.markdown(
-            "<div style='font-size:0.70rem;color:#718096;margin-top:4px;'>"
-            "🔵 소형 마커: 일반고 (우선지원등급별 색상) &nbsp;|&nbsp; "
-            "🔷 대형 남색 마커: Wee센터 위치</div>",
-            unsafe_allow_html=True,
-        )
 
     except Exception as e:
         st.warning(f"지도 오류: {e}")
