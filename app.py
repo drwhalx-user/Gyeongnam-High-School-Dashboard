@@ -147,19 +147,19 @@ REQUIRED_COLS = [
     "priority_score", "priority_level", "policy_strategy_group",
 ]
 
-# 우선지원등급 → N등급 표시 매핑
+# 우선지원등급 → 표시 매핑
 PRIORITY_DISPLAY = {
-    "최우선 지원": "1등급(최우선)",
-    "우선 지원":   "2등급(우선)",
-    "모니터링":    "3등급(모니터링)",
-    "안정":        "4등급(안정)",
+    "최우선 지원": "지원 시급",
+    "우선 지원":   "지원 필요",
+    "모니터링":    "모니터링",
+    "안정":        "수급 안정",
 }
-PRIORITY_ORDER = ["1등급(최우선)", "2등급(우선)", "3등급(모니터링)", "4등급(안정)"]
+PRIORITY_ORDER = ["지원 시급", "지원 필요", "모니터링", "수급 안정"]
 PRIORITY_COLORS = {
-    "1등급(최우선)":   "#C0392B",
-    "2등급(우선)":     "#E67E22",
-    "3등급(모니터링)": "#F4D03F",
-    "4등급(안정)":     "#27AE60",
+    "지원 시급":  "#C0392B",
+    "지원 필요":  "#E67E22",
+    "모니터링":   "#F4D03F",
+    "수급 안정":  "#27AE60",
 }
 
 STRATEGY_COLORS = {
@@ -254,42 +254,7 @@ def _nearest_wee_center(school_lat: float, school_lon: float, wee_df: pd.DataFra
     return wee_df.loc[idx], round(float(dists[idx]), 2)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ── LLM 기반 AI 브리핑 함수 ──────────────────────────────────────────────────
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _get_gemini_key() -> str | None:
-    """Streamlit secrets에서 GEMINI_API_KEY를 읽는다."""
-    try:
-        return st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        return None
-
-
-def generate_ai_briefing(prompt: str) -> tuple[str, bool]:
-    """
-    Gemini API를 호출하여 브리핑 텍스트를 생성한다.
-    Returns: (briefing_text, is_ai_generated)
-    """
-    api_key = _get_gemini_key()
-
-    if not api_key or not _GENAI_AVAILABLE:
-        return None, False
-
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config=genai.GenerationConfig(temperature=0.2, max_output_tokens=1024),
-        )
-        response = model.generate_content(prompt)
-        text = response.text.strip() if response.text else ""
-        if not text:
-            return None, False
-        return text, True
-    except Exception as e:
-        return f"[API 오류: {e}]", False
-
+# ── (LLM 기반 AI 브리핑 기능 제거됨) ─────────────────────────────────────────
 
 def generate_rule_based_school_briefing(row) -> str:
     """API 없을 때 학교 규칙 기반 브리핑 생성."""
@@ -316,7 +281,7 @@ def generate_rule_based_school_briefing(row) -> str:
     briefing = (
         f"**1. 종합 진단**\n"
         f"{name}은(는) 현재 {supply_state} 또한 {demand_state} "
-        f"{ps_interp} 정책전략 그룹은 '{group}'으로 분류되어 있으며, 우선지원등급은 '{level}'입니다.\n\n"
+        f"{ps_interp} 정책전략 유형은 '{group}'으로 분류되어 있으며, 우선지원등급은 '{level}'입니다.\n\n"
         f"**2. 추천 정책**\n"
         f"1순위: {p1}\n2순위: {p2}\n3순위: {p3}\n\n"
         f"**3. 판단 근거**\n{reason if reason else '해당 학교의 지표 패턴을 기반으로 산출된 결과입니다.'}\n\n"
@@ -325,6 +290,10 @@ def generate_rule_based_school_briefing(row) -> str:
         f"최종 의사결정 시 현장 의견, 예산, 인력 상황을 함께 검토해 주시기 바랍니다."
     )
     return briefing
+
+
+def _build_school_prompt(_unused): pass  # 제거됨
+def _build_optimization_prompt(_unused): pass  # 제거됨
 
 
 def generate_rule_based_optimization_briefing(summary: dict) -> str:
@@ -354,80 +323,6 @@ def generate_rule_based_optimization_briefing(summary: dict) -> str:
         f"실제 배치 결정 시 예산·인력·현장 의견을 함께 고려해 주시기 바랍니다."
     )
     return briefing
-
-
-def _build_school_prompt(row) -> str:
-    """학교 검색 탭용 LLM 프롬프트 생성."""
-    def _v(col, fmt=".3f"):
-        val = row.get(col, "N/A")
-        try:
-            return f"{float(val):{fmt}}" if val != "N/A" else "N/A"
-        except Exception:
-            return str(val)
-
-    return f"""당신은 교육 공공데이터 기반 정책 분석 보조 도구입니다.
-아래 학교의 정량 지표를 바탕으로 정책 담당자용 브리핑을 작성해 주세요.
-새로운 사실을 만들지 말고, 제공된 지표만 근거로 해석해 주세요.
-실제 지원 확정처럼 표현하지 말고, 정책 검토용 분석 결과임을 명확히 해 주세요.
-"검토해 볼 수 있습니다", "우선 검토 대상입니다", "추가 확인이 필요합니다" 표현을 사용해 주세요.
-말투는 반드시 "~입니다", "~습니다" 체로 부드럽고 구체적으로 작성해 주세요.
-한국어로 작성하고, 500자 이내로 작성해 주세요.
-
-[학교 정보]
-학교명: {row.get('school_name', 'N/A')} / 시군구: {row.get('sigungu', 'N/A')}
-CSI(상담공급지수): {_v('CSI')} / CDI(상담수요지수): {_v('CDI')}
-우선지원점수: {_v('priority_score')} / 우선지원등급: {row.get('priority_level', 'N/A')}
-정책전략 그룹: {row.get('policy_strategy_group', 'N/A')}
-3x3 유형: {row.get('supply_demand_matrix_3x3', 'N/A')}
-K-means 군집: {row.get('kmeans_cluster_label', 'N/A')}
-
-[CSI 구성 지표]
-상담인력공급: {_v('counseling_staff_supply_score')} / Wee클래스: {_v('wee_class_score')} / Wee센터접근성: {_v('wee_center_access_score')}
-
-[CDI 구성 지표]
-수요규모: {_v('demand_size_score')} / 상담이용률: {_v('counseling_use_score')} / 학교폭력위험: {_v('school_violence_risk_score')}
-
-[AI 추천 정책]
-1순위: {row.get('recommended_policy_1', 'N/A')} ({_v('recommended_policy_1_score')})
-2순위: {row.get('recommended_policy_2', 'N/A')} ({_v('recommended_policy_2_score')})
-3순위: {row.get('recommended_policy_3', 'N/A')} ({_v('recommended_policy_3_score')})
-추천 근거: {row.get('recommended_policy_reason', 'N/A')}
-
-[작성 형식 — 각 항목 2~3문장]
-1. 종합 진단
-2. 주요 근거
-3. 추천 정책 방향
-4. 유의사항"""
-
-
-def _build_optimization_prompt(summary: dict) -> str:
-    """시뮬레이션 탭용 LLM 프롬프트 생성."""
-    top5 = summary.get("top5_schools", [])
-    top5_str = "\n".join([f"  - {s}" for s in top5]) if top5 else "  - 해당 없음"
-    return f"""당신은 교육청 정책 담당자를 위한 AI 브리핑 보조 도구입니다.
-아래 최적화 시뮬레이션 결과를 바탕으로 정책 보고서에 활용할 수 있는 요약문을 작성해 주세요.
-새로운 수치나 사실을 만들지 말고, 제공된 값만 사용해 주세요.
-본 결과는 실제 정책 효과 예측이 아니라 지수 산식 기반 가상 시뮬레이션이라는 점을 반드시 포함해 주세요.
-말투는 반드시 "~입니다", "~습니다" 체로 부드럽고 구체적으로 작성해 주세요.
-한국어로 작성하고, 500자 이내로 작성해 주세요.
-
-[자원 조건]
-대상 범위: {summary.get('scope', 'N/A')}
-전문상담교사 배치: {summary.get('n_a', 0)}개교 / Wee클래스 신설: {summary.get('n_b', 0)}개교 / Wee센터 연계: {summary.get('n_c', 0)}개교
-
-[최적화 결과]
-추천 학교 수: {summary.get('n_schools', 0)}개교
-평균 CSI 변화: {summary.get('avg_csi_before', 0):.3f} → {summary.get('avg_csi_after', 0):.3f}
-평균 우선지원점수 변화: {summary.get('avg_ps_before', 0):.3f} → {summary.get('avg_ps_after', 0):.3f}
-PS>0 학교 변화: {summary.get('n_pos_before', 0)}개 → {summary.get('n_pos_after', 0)}개
-개선효과 상위 학교:
-{top5_str}
-
-[작성 형식 — 각 항목 2~3문장]
-1. 시뮬레이션 조건
-2. 주요 결과
-3. 정책적 시사점
-4. 한계 및 추가 검토 사항"""
 
 
 # ── 4. 데이터 로드 ─────────────────────────────────────────────────────────────
@@ -505,10 +400,37 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
         "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 2px 0;font-weight:700;'>"
         "경상남도 고등학교 상담지원 인프라 수급 불균형 분석 및 의사결정 대시보드"
         "</h1>"
-        "<p style='color:#718096;font-size:0.78rem;margin:0 0 14px 0;'>"
-        "CSI(상담공급지수) · CDI(상담수요지수) · 우선지원점수 기반 학교별 우선순위 분석 "
+        "<p style='color:#718096;font-size:0.78rem;margin:0 0 10px 0;'>"
+        "상담공급지수(CSI) · 상담수요지수(CDI) · 우선지원점수 기반 학교별 우선순위 분석 "
         "| 데이터 기준일: 2026.01.01</p>",
         unsafe_allow_html=True)
+
+    # 대시보드 소개 카드
+    with st.container(border=True):
+        st.markdown(
+            "<div style='display:flex;gap:18px;align-items:flex-start;'>"
+            "<div style='flex:1;'>"
+            "<div style='font-size:0.82rem;font-weight:700;color:#1E3A5F;margin-bottom:6px;'>"
+            "📌 이 대시보드는 무엇인가요?</div>"
+            "<div style='font-size:0.76rem;color:#4A5568;line-height:1.8;'>"
+            "경상남도 일반고등학교 146개교의 <b>상담지원 공급과 수요 불균형</b>을 "
+            "데이터로 분석하여, <b>어느 학교에 어떤 상담지원이 우선적으로 필요한지</b> "
+            "파악할 수 있도록 설계된 정책 검토 지원 도구입니다."
+            "</div></div>"
+            "<div style='flex:1;border-left:1px solid #E2E8F0;padding-left:16px;'>"
+            "<div style='font-size:0.82rem;font-weight:700;color:#1E3A5F;margin-bottom:6px;'>"
+            "🗂️ 탭별 주요 기능</div>"
+            "<div style='font-size:0.74rem;color:#4A5568;line-height:1.9;'>"
+            "📋 <b>현황 개요</b>: 전체 학교 분포 및 주요 지표 요약<br>"
+            "🗺️ <b>지역별 분석</b>: 시군구 단위 상담 인프라 비교<br>"
+            "🔍 <b>학교 검색</b>: 개별 학교 진단 및 지표 상세 확인<br>"
+            "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
+            "💡 <b>AI 기반 정책 제안</b>: 학교별 맞춤 정책 추천<br>"
+            "⚙️ <b>시뮬레이션</b>: 정책 적용 전후 효과 가상 비교<br>"
+            "📐 <b>자원배치 시나리오</b>: 제한된 자원의 최적 배분 제안"
+            "</div></div></div>",
+            unsafe_allow_html=True,
+        )
 
     # ── 지표 카드 5개 ─────────────────────────────────────────────────────────
     _render_metric_cards(df, df_all)
@@ -533,7 +455,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
     st.markdown(
         "<div class='footer-note'>"
         "※ CSI(상담지원 인프라 공급지수) · CDI(상담수요 지수) · 우선지원점수 = CDI − CSI "
-        "| 우선지원등급: 1등급(최우선) → 4등급(안정) "
+        "| 우선지원등급: 지원 시급 → 수급 안정 "
         "| 본 대시보드는 분석 결과를 기반으로 한 정책 의사결정 지원 도구이며, "
         "실제 지원 확정 기준은 아닙니다."
         "</div>",
@@ -547,7 +469,7 @@ def _render_metric_cards(df: pd.DataFrame, df_all: pd.DataFrame):
     csi     = df["CSI"].mean() if n else 0.0
     cdi     = df["CDI"].mean() if n else 0.0
     ps      = df["priority_score"].mean() if n else 0.0
-    n_top   = int((df["priority_display"] == "1등급(최우선)").sum())
+    n_top   = int((df["priority_display"] == "지원 시급").sum())
     pct_top = n_top / n * 100 if n else 0.0
 
     defs = [
@@ -559,7 +481,7 @@ def _render_metric_cards(df: pd.DataFrame, df_all: pd.DataFrame):
          "👥", "#FEF9E7", "#F39C12"),
         ("평균 우선지원점수",    f"{ps:+.3f}",     "CDI − CSI",
          "🎯", "#F3E8FF", "#8E44AD"),
-        ("1등급(최우선) 학교 수", f"{n_top}개교",  f"({pct_top:.1f}%)",
+        ("지원 시급 학교 수", f"{n_top}개교",  f"({pct_top:.1f}%)",
          "⚠️", "#FDECEA", "#C0392B"),
     ]
 
@@ -830,7 +752,7 @@ def _render_infra_section(df: pd.DataFrame):
                 showlegend=False,
             ))
             fig.update_layout(
-                title=dict(text="정책전략 그룹 비율",
+                title=dict(text="정책전략 유형 비율",
                            font=dict(size=10, color="#1E3A5F")),
                 margin=dict(t=32, b=4, l=4, r=4), height=210,
                 annotations=[dict(
@@ -955,7 +877,7 @@ def _render_distributions(df: pd.DataFrame):
 # 지역별 분석 탭
 # ══════════════════════════════════════════════════════════════════════════════
 
-# 정책전략 그룹 순서 (지역별 분석 탭 전용)
+# 정책전략 유형 순서 (지역별 분석 탭 전용)
 _REGIONAL_STRAT = [
     "최우선 개입형", "우선 보완형", "인력 취약형", "접근성 보완형", "안정형",
 ]
@@ -980,7 +902,7 @@ def _build_sigungu_agg(_df_hash: int, df: pd.DataFrame) -> pd.DataFrame:
         .round({"평균CSI": 3, "평균CDI": 3, "평균PS": 3})
     )
 
-    # 정책전략 그룹별 학교 수
+    # 정책전략 유형별 학교 수
     strat_pivot = (
         work.groupby(["sigungu", "policy_strategy_group"])
         .size().unstack(fill_value=0).reset_index()
@@ -1027,7 +949,7 @@ def show_regional(df: pd.DataFrame):
         "지역별 상담지원 수급 불균형 분석"
         "</h1>"
         "<p style='color:#718096;font-size:0.78rem;margin:0 0 6px 0;'>"
-        "시군구별 CSI·CDI·우선지원점수·정책전략 그룹 분포를 비교하여 "
+        "시군구별 CSI·CDI·우선지원점수·정책전략 유형 분포를 비교하여 "
         "지역 단위의 우선지원 필요성을 파악합니다."
         "</p>"
         "<div style='background:#EBF2FF;border-left:3px solid #2980B9;"
@@ -1086,13 +1008,17 @@ def _render_regional_kpi(agg: pd.DataFrame):
     top_manp_cnt = int(agg.loc[top_manp_idx, "인력 취약형"]) if top_manp_idx is not None else 0
 
     defs = [
-        ("분석 대상 시군구 수",     f"{n_sgg}개 시군구",  "경남 일반고 전수 대상",
+        ("분석 대상 시군구 수",     f"{n_sgg}개 시군구",
+         "경남 일반고 학교가 있는 시군구 전수 분석",
          "🗺️", "#EBF2FF", "#2980B9"),
-        ("우선지원점수 최고 지역",  top_ps_sgg,           f"평균 {top_ps_val:+.3f}",
+        ("상담 수급 불균형 최고 지역",  top_ps_sgg,
+         f"평균 우선지원점수 {top_ps_val:+.3f} — 값이 높을수록 공급 부족 우려",
          "📍", "#FEF9E7", "#F39C12"),
-        ("최우선 개입형 최다 지역", top_intv_sgg,         f"{top_intv_cnt}개교",
+        ("지원이 가장 시급한 유형 최다 지역", top_intv_sgg,
+         f"최우선 개입형 {top_intv_cnt}개교 — 수요·공급 불균형이 뚜렷한 학교",
          "⚠️", "#FDECEA", "#C0392B"),
-        ("인력 취약형 최다 지역",   top_manp_sgg,         f"{top_manp_cnt}개교",
+        ("상담인력 부족 지역",   top_manp_sgg,
+         f"인력 취약형 {top_manp_cnt}개교 — 전문상담교사 배치 보완 필요",
          "👥", "#F3E8FF", "#8E44AD"),
     ]
 
@@ -1333,12 +1259,12 @@ def _render_top_intervention_bar(agg: pd.DataFrame):
         st.plotly_chart(fig, width="stretch")
 
 
-# ── 시군구별 정책전략 그룹 100% 누적 bar ──────────────────────────────────────
+# ── 시군구별 정책전략 유형 100% 누적 bar ──────────────────────────────────────
 def _render_strategy_stacked_bar(agg: pd.DataFrame):
     with st.container(border=True):
         st.markdown(
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "margin-bottom:6px;'>📊 시군구별 정책전략 그룹 분포</div>",
+            "margin-bottom:6px;'>📊 시군구별 정책전략 유형 분포</div>",
             unsafe_allow_html=True,
         )
         # 최우선 개입형 비율 내림차순 정렬
@@ -1469,7 +1395,7 @@ _DETAIL_COLS = {
     "CDI":                           "CDI",
     "priority_score":                "우선지원점수",
     "priority_level":                "우선지원등급",
-    "policy_strategy_group":         "정책전략 그룹",
+    "policy_strategy_group":         "정책전략 유형",
     "supply_demand_matrix_3x3":      "수요공급 매트릭스",
 }
 
@@ -1482,7 +1408,7 @@ def show_school_search(df: pd.DataFrame):
         "</h1>"
         "<p style='color:#718096;font-size:0.78rem;margin:0 0 14px 0;'>"
         "개별 학교의 상담공급지수(CSI), 상담수요지수(CDI), 우선지원점수, "
-        "세부 구성 점수, 정책전략 그룹과 정책 피드백을 확인합니다."
+        "세부 구성 점수, 정책전략 유형과 정책 피드백을 확인합니다."
         "</p>",
         unsafe_allow_html=True,
     )
@@ -1667,7 +1593,7 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
             f"</div>"
         )
 
-    # 외부 2열: 좌(2x2 그리드) | 우(정책전략 그룹 단일 카드)
+    # 외부 2열: 좌(2x2 그리드) | 우(정책전략 유형 단일 카드)
     grid_col, sg_col = st.columns([3.6, 1.4], gap="small")
 
     with grid_col:
@@ -1692,7 +1618,7 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
 
     with sg_col:
         # 2x2 전체 높이(115px × 2 + gap 12px + spacer 20px ≈ 262px)에 맞춘 단일 카드
-        st.markdown(_card(scolor, "정책전략 그룹", sg, "", "254px"),
+        st.markdown(_card(scolor, "정책전략 유형", sg, "", "254px"),
                     unsafe_allow_html=True)
 
 
@@ -1866,47 +1792,6 @@ def _render_school_avg_comparison(row: pd.Series, df_all: pd.DataFrame):
 
 
 # ── 세부 지표 테이블 ──────────────────────────────────────────────────────────
-def _render_school_ai_briefing(row):
-    """학교 검색 탭 — AI 정책 브리핑 생성 UI."""
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
-            "🤖 AI 정책 브리핑</div>"
-            "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
-            "기존 분석 결과를 바탕으로 LLM이 자연어 브리핑을 생성합니다. "
-            "LLM은 새로운 판단을 하지 않으며, 정책 검토용 참고 자료입니다.</div>",
-            unsafe_allow_html=True,
-        )
-        btn_key = f"school_briefing_{row.get('school_code', 'x')}"
-        if st.button("🤖 AI 브리핑 생성", key=btn_key):
-            with st.spinner("AI 브리핑 생성 중..."):
-                api_key = _get_gemini_key()
-                if not api_key:
-                    st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
-                    briefing = generate_rule_based_school_briefing(row)
-                    is_ai = False
-                else:
-                    prompt  = _build_school_prompt(row)
-                    briefing, is_ai = generate_ai_briefing(prompt)
-                    if not briefing or not is_ai:
-                        st.caption("⚠️ AI 브리핑 생성 중 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
-                        briefing = generate_rule_based_school_briefing(row)
-
-            label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
-            st.markdown(
-                f"<div style='background:#F7FAFC;border-left:3px solid #2E5FA3;"
-                f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
-                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
-                f"<div style='font-size:0.76rem;color:#2D3748;line-height:1.7;'>"
-                f"{briefing.replace(chr(10), '<br>')}</div>"
-                f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
-                f"※ 본 브리핑은 정책 검토용 참고 자료이며 실제 지원 확정 기준이 아닙니다.</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
-
 def _render_policy_fit_card(score_row):
     """AI 추천 정책 카드 + 6개 적합도 수평 바 차트."""
     if score_row is None:
@@ -2132,14 +2017,14 @@ def _render_similar_schools(row: pd.Series, df: pd.DataFrame):
         st.markdown(
             f"<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             f"padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:6px;'>"
-            f"🔗 같은 정책전략 그룹 내 비교 학교</div>"
+            f"🔗 같은 정책전략 유형 내 비교 학교</div>"
             f"<div style='font-size:0.74rem;color:#718096;margin-bottom:8px;'>"
             f"그룹: <b style='color:{scolor};'>{group}</b> "
             f"| 우선지원점수 상위 5개교 (★ 선택 학교)</div>",
             unsafe_allow_html=True,
         )
         if group is None:
-            st.info("정책전략 그룹 정보가 없습니다.")
+            st.info("정책전략 유형 정보가 없습니다.")
             return
 
         sim = (
@@ -2211,7 +2096,7 @@ _TYPE_CARD_INFO = [
      "정기 모니터링이 적절한 유형입니다."),
 ]
 
-# 정책전략 그룹 → 해석 문구
+# 정책전략 유형 → 해석 문구
 _STRATEGY_INTERPRET = {
     "최우선 개입형":      "상담수요 대비 공급 부족이 뚜렷하여 우선 지원 검토가 필요한 유형",
     "우선 보완형":        "상담수요가 높거나 기존 인프라 보완 필요성이 있는 유형",
@@ -2232,7 +2117,7 @@ def show_type_analysis(df: pd.DataFrame):
         "</h1>"
         "<p style='color:#718096;font-size:0.78rem;margin:0 0 8px 0;'>"
         "상담공급지수(CSI)와 상담수요지수(CDI)의 상대적 수준을 기준으로 학교를 "
-        "3×3 수요-공급 매트릭스와 정책전략 그룹으로 분류하여 정책 대응 방향을 확인합니다."
+        "3×3 수요-공급 매트릭스와 정책전략 유형으로 분류하여 정책 대응 방향을 확인합니다."
         "</p>",
         unsafe_allow_html=True,
     )
@@ -2250,7 +2135,7 @@ def show_type_analysis(df: pd.DataFrame):
     _render_type_kpi_cards(df)
     st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
 
-    # ── Row 1: 산점도 (좌) + 정책전략 그룹 바 (우) ──────────────────────────
+    # ── Row 1: 산점도 (좌) + 정책전략 유형 바 (우) ──────────────────────────
     sc_col, sg_col = st.columns([1.8, 1.2], gap="small")
     with sc_col:
         _render_csi_cdi_scatter(df)
@@ -2267,7 +2152,7 @@ def show_type_analysis(df: pd.DataFrame):
     # ── Row 3: 3x3 유형별 주요 특성 표 ─────────────────────────────────────
     _render_matrix_summary_table(df)
 
-    # ── Row 4: 정책전략 그룹별 주요 특성 표 ─────────────────────────────────
+    # ── Row 4: 정책전략 유형별 주요 특성 표 ─────────────────────────────────
     _render_strategy_summary_table(df)
 
     # ── Row 5: 핵심 유형 해석 카드 4개 ──────────────────────────────────────
@@ -2426,7 +2311,7 @@ def _render_kmeans_section():
                 "<b>%{customdata[0]}</b> (%{customdata[1]})<br>"
                 "CSI: %{x:.3f} | CDI: %{y:.3f}<br>"
                 "우선지원점수: %{customdata[2]:.3f}<br>"
-                "정책전략 그룹: %{customdata[3]}<extra></extra>"
+                "정책전략 유형: %{customdata[3]}<extra></extra>"
             ),
         )
         fig2.add_hline(y=avg_cdi, line_dash="dot", line_color="#718096", line_width=1,
@@ -2481,7 +2366,7 @@ def _render_kmeans_section():
     with st.expander("▶ 기존 3×3 유형 × K-means 군집 비교표"):
         for cross_col, title in [
             ("supply_demand_matrix_3x3", "3×3 수요-공급 매트릭스"),
-            ("policy_strategy_group",    "정책전략 그룹"),
+            ("policy_strategy_group",    "정책전략 유형"),
             ("priority_level",           "우선지원등급"),
         ]:
             if cross_col not in km_valid.columns:
@@ -2566,7 +2451,7 @@ def _render_csi_cdi_scatter(df: pd.DataFrame):
     hover_cols = {
         "학교명": "school_name", "시군구": "sigungu",
         "3x3 유형": "supply_demand_matrix_3x3",
-        "정책전략 그룹": "policy_strategy_group",
+        "정책전략 유형": "policy_strategy_group",
         "우선지원점수": "priority_score",
     }
     custom_data_cols = [c for c in hover_cols.values() if c in df.columns]
@@ -2577,7 +2462,7 @@ def _render_csi_cdi_scatter(df: pd.DataFrame):
         color_discrete_map=color_map,
         custom_data=custom_data_cols,
         labels={"CSI": "CSI (상담공급지수)", "CDI": "CDI (상담수요지수)",
-                "policy_strategy_group": "정책전략 그룹"},
+                "policy_strategy_group": "정책전략 유형"},
     )
     # hover 템플릿
     cd_labels = [k for k, v in hover_cols.items() if v in custom_data_cols]
@@ -2604,7 +2489,7 @@ def _render_csi_cdi_scatter(df: pd.DataFrame):
         margin=dict(l=10, r=10, t=45, b=50),
         xaxis=dict(range=[-0.05, 1.05], title="CSI (상담공급지수)", tickfont=dict(size=9)),
         yaxis=dict(range=[-0.05, 1.05], title="CDI (상담수요지수)", tickfont=dict(size=9)),
-        legend=dict(title="정책전략 그룹", font=dict(size=9), orientation="v",
+        legend=dict(title="정책전략 유형", font=dict(size=9), orientation="v",
                     x=1.01, y=1, xanchor="left"),
         plot_bgcolor="white", paper_bgcolor="white",
         font=dict(family="Malgun Gothic, sans-serif"),
@@ -2618,7 +2503,7 @@ def _render_csi_cdi_scatter(df: pd.DataFrame):
         )
 
 
-# ── 정책전략 그룹별 학교 수 수평 바 ──────────────────────────────────────────
+# ── 정책전략 유형별 학교 수 수평 바 ──────────────────────────────────────────
 def _render_strategy_group_bar(df: pd.DataFrame):
     if "policy_strategy_group" not in df.columns:
         st.warning("policy_strategy_group 컬럼이 없습니다.")
@@ -2635,7 +2520,7 @@ def _render_strategy_group_bar(df: pd.DataFrame):
         text=grp["학교수"], textposition="outside", textfont=dict(size=10),
     ))
     fig.update_layout(
-        title=dict(text="정책전략 그룹별 학교 수", font=dict(size=12, color="#1E3A5F"), x=0),
+        title=dict(text="정책전략 유형별 학교 수", font=dict(size=12, color="#1E3A5F"), x=0),
         height=420,
         margin=dict(l=10, r=40, t=45, b=20),
         xaxis=dict(title="학교 수", tickfont=dict(size=9)),
@@ -2766,7 +2651,7 @@ def _render_matrix_summary_table(df: pd.DataFrame):
         st.dataframe(agg, use_container_width=True, height=280)
 
 
-# ── 정책전략 그룹별 주요 특성 표 ─────────────────────────────────────────────
+# ── 정책전략 유형별 주요 특성 표 ─────────────────────────────────────────────
 def _render_strategy_summary_table(df: pd.DataFrame):
     if "policy_strategy_group" not in df.columns:
         return
@@ -2778,7 +2663,7 @@ def _render_strategy_summary_table(df: pd.DataFrame):
     rows = []
     for grp, gdf in df.groupby("policy_strategy_group"):
         rows.append({
-            "정책전략 그룹":   grp,
+            "정책전략 유형":   grp,
             "학교수":          len(gdf),
             "평균CSI":         round(gdf["CSI"].mean(), 3),
             "평균CDI":         round(gdf["CDI"].mean(), 3),
@@ -2795,7 +2680,7 @@ def _render_strategy_summary_table(df: pd.DataFrame):
         st.markdown(
             "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
             "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
-            "📋 정책전략 그룹별 주요 특성</div>",
+            "📋 정책전략 유형별 주요 특성</div>",
             unsafe_allow_html=True,
         )
         st.dataframe(strat_df, use_container_width=True, height=240)
@@ -2846,7 +2731,7 @@ def _render_type_school_list(df: pd.DataFrame):
             "sigungu":                  "시군구",
             "priority_score":           "우선지원점수",
             "priority_level":           "우선지원등급",
-            "policy_strategy_group":    "정책전략 그룹",
+            "policy_strategy_group":    "정책전략 유형",
         })
         for c in ["CSI", "CDI", "우선지원점수"]:
             if c in result.columns:
@@ -2872,12 +2757,12 @@ def _assign_sim_level(score: float, q90: float, q80: float, q20: float) -> str:
     if pd.isna(score):
         return "확인 필요"
     if score >= q90:
-        return "최우선 지원 검토"
+        return "지원 시급 (시뮬레이션)"
     if score >= q80:
-        return "우선 지원 검토"
+        return "지원 필요 (시뮬레이션)"
     if score >= q20:
         return "모니터링"
-    return "안정"
+    return "수급 안정"
 
 
 # 시뮬레이션 계산 핵심 함수
@@ -2907,9 +2792,11 @@ def _run_simulation(
     if apply_wee_class:
         sim.loc[sim["sim_wee"] == 0, "sim_wee"] = 1.0
 
-    # 정책 3: Wee센터 연계 강화
+    # 정책 3: Wee센터 연계 강화 (한 단계 개선: 0.1→0.4, 0.4→0.7)
     if apply_wee_center:
-        sim.loc[sim["sim_center"] <= 0.4, "sim_center"] = 0.7
+        _orig_c = sim["sim_center"].copy()
+        sim.loc[_orig_c < 0.4, "sim_center"] = 0.4
+        sim.loc[(_orig_c >= 0.4) & (_orig_c < 0.7), "sim_center"] = 0.7
 
     # sim_CSI 계산
     sim["sim_CSI"]    = (sim["sim_staff"] + sim["sim_wee"] + sim["sim_center"]) / 3
@@ -4024,14 +3911,14 @@ def show_optimization_sim():
             "combined_after_priority_score": "적용 후 PS",
             "combined_priority_improvement": "PS 개선폭",
             "priority_level": "기존 등급",
-            "policy_strategy_group": "정책전략 그룹",
+            "policy_strategy_group": "정책전략 유형",
             "supply_demand_matrix_3x3": "3x3 유형",
             "recommended_policy_1": "AI 추천 1순위",
         })
         show_cols = ["순위","학교명","시군구","적용 추천 정책",
                      "기존 CSI","적용 후 CSI","CSI 개선폭",
                      "기존 PS","적용 후 PS","PS 개선폭",
-                     "기존 등급","정책전략 그룹","3x3 유형","AI 추천 1순위"]
+                     "기존 등급","정책전략 유형","3x3 유형","AI 추천 1순위"]
         st.dataframe(disp[[c for c in show_cols if c in disp.columns]],
                      use_container_width=True, height=300)
 
@@ -4234,7 +4121,7 @@ def _render_school_sim(df: pd.DataFrame):
 
     staff_a  = max(staff_b, 0.4)  if p1 else staff_b
     wee_a    = 1.0                if (p2 and wee_b == 0) else wee_b
-    center_a = max(center_b, 0.7) if (p3 and center_b <= 0.4) else center_b
+    center_a = (0.4 if center_b < 0.4 else 0.7) if (p3 and center_b < 0.7) else center_b
     dem_a    = dem_b
     use_a    = use_b
     viol_a   = viol_b
@@ -4325,7 +4212,7 @@ def _render_school_sim_kpi(
         (c3, "#E67E22", "우선지원점수",
          f"{ps_b:.3f} → <b style='color:#E67E22;'>{ps_a:.3f}</b>",
          _arrow(ps_chg, good_neg=True)),
-        (c4, scolor, "정책전략 그룹",
+        (c4, scolor, "정책전략 유형",
          sg,
          "<span style='color:#A0AEC0;font-size:0.67rem;'>기존 그룹 기준 (재분류 없음)</span>"),
     ]
@@ -4831,7 +4718,7 @@ def show_data_description(df: pd.DataFrame):
                 unsafe_allow_html=True,
             )
 
-    # ── Row 2: CSI 산출 / CDI 산출 / 정책전략 그룹 ──────────────────────────
+    # ── Row 2: CSI 산출 / CDI 산출 / 정책전략 유형 ──────────────────────────
     _MH2 = "min-height:255px;"
 
     d1, d2, d3 = st.columns(3, gap="small")
@@ -4887,7 +4774,7 @@ def show_data_description(df: pd.DataFrame):
             st.markdown(
                 f"<div style='{_MH2}'>"
                 "<div style='font-size:0.88rem;font-weight:700;color:#9B59B6;"
-                "margin-bottom:8px;'>👥 6. 정책전략 그룹 설명</div>"
+                "margin-bottom:8px;'>👥 6. 정책전략 유형 설명</div>"
                 "<div style='display:flex;align-items:flex-start;gap:7px;margin-bottom:7px;'>"
                 "<span style='background:#C0392B;color:white;padding:1px 7px;border-radius:8px;font-size:0.67rem;font-weight:700;white-space:nowrap;flex-shrink:0;'>최우선 개입형</span>"
                 "<span style='font-size:0.71rem;color:#4A5568;line-height:1.5;'>PS 상위·핵심 불균형 → 최우선 정책 검토</span></div>"
@@ -4970,10 +4857,10 @@ def show_data_description(df: pd.DataFrame):
                 unsafe_allow_html=True,
             )
             grade_data = [
-                ("1등급(최우선)", "#C0392B", "PS 상위 10%",      "최우선 지원 검토"),
-                ("2등급(우선)",   "#E67E22", "PS 상위 10~20%",   "우선 지원 검토"),
+                ("지원 시급", "#C0392B", "PS 상위 10%",      "최우선 지원 검토"),
+                ("지원 필요",   "#E67E22", "PS 상위 10~20%",   "우선 지원 검토"),
                 ("3등급(모니터링)","#F4D03F", "PS 중위 60%",      "정기 모니터링"),
-                ("4등급(안정)",   "#27AE60", "PS 하위 20%",      "현 상태 유지"),
+                ("수급 안정",   "#27AE60", "PS 하위 20%",      "현 상태 유지"),
             ]
             rows_html = ""
             for grade, color, crit, action in grade_data:
@@ -5083,7 +4970,7 @@ def show_data_description(df: pd.DataFrame):
             ("csi_relative_level",             "CSI 상대 수준",        "CSI 분위수 기반 공급 하·중·상위",        "유형화 기준", "-"),
             ("cdi_relative_level",             "CDI 상대 수준",        "CDI 분위수 기반 수요 하·중·상위",        "유형화 기준", "-"),
             ("supply_demand_matrix_3x3",       "3×3 매트릭스 유형",    "cdi_relative × csi_relative 조합",       "유형화 결과", "9개 유형"),
-            ("policy_strategy_group",          "정책전략 그룹",        "PS·지표 패턴 기반 5개 그룹 분류",        "정책 분류", "5개 그룹"),
+            ("policy_strategy_group",          "정책전략 유형",        "PS·지표 패턴 기반 5개 그룹 분류",        "정책 분류", "5개 그룹"),
             ("policy_recommendation",          "정책 추천 방향",       "그룹별 맞춤 정책 방향 텍스트",            "정책 피드백", "-"),
             ("policy_reason",                  "판단 근거",            "해당 학교 지표 패턴 기반 설명",           "정책 피드백", "-"),
         ]
@@ -5135,7 +5022,7 @@ def show_data_description(df: pd.DataFrame):
                 "<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>학교폭력 위험 점수는 피해 응답 자료 중심 (가해·목격 자료 미포함)</div>"
                 "<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>상담 질·교사 업무 부담·대기시간 등 정성 지표 미반영</div>"
                 "<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>수작업 입력 자료의 오류 가능성 존재</div>"
-                "<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>정책전략 그룹은 실제 지원 확정이 아닌 정책 검토용 분류</div>"
+                "<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>정책전략 유형은 실제 지원 확정이 아닌 정책 검토용 분류</div>"
                 "</div>",
                 unsafe_allow_html=True,
             )
@@ -5458,43 +5345,6 @@ def show_ai_policy(df: pd.DataFrame):
         _render_ai_reason_card(row)
 
     # ── AI 정책 브리핑 섹션 ───────────────────────────────────────────────────
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
-            "🤖 AI 정책 브리핑 생성</div>"
-            "<div style='font-size:0.72rem;color:#718096;margin-bottom:8px;'>"
-            "기존 분석 결과를 바탕으로 LLM이 자연어 브리핑을 생성합니다. "
-            "LLM은 새로운 판단을 하지 않으며, 정책 검토용 참고 자료입니다.</div>",
-            unsafe_allow_html=True,
-        )
-        btn_key = f"ai_policy_briefing_{sel_code}"
-        if st.button("🤖 선택 학교 AI 정책 브리핑 생성", key=btn_key):
-            with st.spinner("AI 브리핑 생성 중..."):
-                api_key = _get_gemini_key()
-                if not api_key:
-                    st.caption("⚠️ LLM API 키가 설정되지 않아 규칙 기반 브리핑을 표시합니다.")
-                    briefing = generate_rule_based_school_briefing(row)
-                    is_ai = False
-                else:
-                    prompt  = _build_school_prompt(row)
-                    briefing, is_ai = generate_ai_briefing(prompt)
-                    if not briefing or not is_ai:
-                        st.caption("⚠️ 오류가 발생하여 규칙 기반 브리핑을 표시합니다.")
-                        briefing = generate_rule_based_school_briefing(row)
-            label = "🤖 AI 생성 브리핑" if is_ai else "📋 규칙 기반 브리핑"
-            st.markdown(
-                f"<div style='background:#F7FAFC;border-left:3px solid #2E5FA3;"
-                f"padding:10px 14px;border-radius:6px;margin-top:6px;'>"
-                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:6px;'>{label}</div>"
-                f"<div style='font-size:0.78rem;color:#2D3748;line-height:1.8;'>"
-                f"{briefing.replace(chr(10), '<br>')}</div>"
-                f"<div style='font-size:0.67rem;color:#A0AEC0;margin-top:8px;'>"
-                f"※ 정책 검토용 참고 자료이며 실제 지원 확정 기준이 아닙니다.</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-
     # ── 전체 정책 제안 분포 ───────────────────────────────────────────────────
     st.markdown(
         "<hr style='border-color:#E2E8F0;margin:24px 0 16px;'>"
@@ -5809,7 +5659,7 @@ def _render_policy_distribution(df: pd.DataFrame):
             st.markdown(
                 "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
                 "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
-                "📋 정책전략 그룹별 1순위 추천 정책 분포</div>",
+                "📋 정책전략 유형별 1순위 추천 정책 분포</div>",
                 unsafe_allow_html=True,
             )
             ct = pd.crosstab(df["policy_strategy_group"], df["recommended_policy_1"])
