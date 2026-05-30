@@ -254,9 +254,7 @@ def _nearest_wee_center(school_lat: float, school_lon: float, wee_df: pd.DataFra
     return wee_df.loc[idx], round(float(dists[idx]), 2)
 
 
-# ── (LLM 기반 AI 브리핑 기능 제거됨) ─────────────────────────────────────────
-
-def generate_rule_based_school_briefing(row) -> str:
+def generate_rule_based_school_briefing(row) -> str:  # 미사용 — 추후 제거 가능
     """API 없을 때 학교 규칙 기반 브리핑 생성."""
     name   = row.get("school_name", "해당 학교")
     csi    = row.get("CSI", "N/A")
@@ -290,10 +288,6 @@ def generate_rule_based_school_briefing(row) -> str:
         f"최종 의사결정 시 현장 의견, 예산, 인력 상황을 함께 검토해 주시기 바랍니다."
     )
     return briefing
-
-
-def _build_school_prompt(_unused): pass  # 제거됨
-def _build_optimization_prompt(_unused): pass  # 제거됨
 
 
 def generate_rule_based_optimization_briefing(summary: dict) -> str:
@@ -1490,12 +1484,8 @@ def show_school_search(df: pd.DataFrame):
         _render_similar_schools(row, df)
 
     # 정책 적합도 점수 데이터 로드 (1순위 간단 표시용)
-    _df_scores = _load_scores_data()
-    _row_scores = _get_school_scores(_df_scores, sel_code)
-
     with right_col:
         _render_policy_feedback(row)
-        _render_policy_fit_card(_row_scores)
         _render_school_detail_table(row)
 
     # ── footer ────────────────────────────────────────────────────────────────
@@ -1796,74 +1786,7 @@ def _render_school_avg_comparison(row: pd.Series, df_all: pd.DataFrame):
 
 # ── 세부 지표 테이블 ──────────────────────────────────────────────────────────
 def _render_policy_fit_card(score_row):
-    """AI 추천 정책 카드 + 6개 적합도 수평 바 차트."""
-    if score_row is None:
-        return
-
-    with st.container(border=True):
-        st.markdown(
-            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
-            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
-            "🤖 AI 추천 정책 (정책별 적합도 점수)</div>",
-            unsafe_allow_html=True,
-        )
-        # 추천 1~3순위 배지
-        badge_html = ""
-        for rank, (rec_col, score_col, color) in enumerate([
-            ("recommended_policy_1", "recommended_policy_1_score", "#C0392B"),
-            ("recommended_policy_2", "recommended_policy_2_score", "#E67E22"),
-            ("recommended_policy_3", "recommended_policy_3_score", "#2980B9"),
-        ], 1):
-            name  = score_row.get(rec_col, "")
-            score = score_row.get(score_col, "")
-            if name and not (isinstance(name, float) and pd.isna(name)):
-                s_str = f"{float(score):.3f}" if pd.notna(score) else "-"
-                badge_html += (
-                    f"<div style='display:flex;align-items:center;gap:8px;"
-                    f"margin-bottom:6px;'>"
-                    f"<span style='background:{color};color:white;padding:1px 8px;"
-                    f"border-radius:8px;font-size:0.68rem;font-weight:700;'>{rank}순위</span>"
-                    f"<span style='font-size:0.77rem;color:#2D3748;'>{name}</span>"
-                    f"<span style='font-size:0.70rem;color:#718096;margin-left:auto;'>{s_str}</span>"
-                    f"</div>"
-                )
-        st.markdown(badge_html, unsafe_allow_html=True)
-
-        # 6개 적합도 수평 바 차트
-        fit_names  = list(_FIT_COLS.values())
-        fit_values = [float(score_row.get(col, 0) or 0) for col in _FIT_COLS]
-        fig = go.Figure(go.Bar(
-            x=fit_values, y=fit_names, orientation="h",
-            marker_color=_FIT_COLORS,
-            text=[f"{v:.3f}" for v in fit_values],
-            textposition="outside", textfont=dict(size=9),
-        ))
-        fig.update_layout(
-            height=250, margin=dict(l=10, r=50, t=10, b=10),
-            xaxis=dict(range=[0, 1.1], tickfont=dict(size=8), title="적합도 (0~1)"),
-            yaxis=dict(tickfont=dict(size=9)),
-            plot_bgcolor="white", paper_bgcolor="white",
-            font=dict(family="Malgun Gothic, sans-serif"),
-        )
-        st.plotly_chart(fig, width="stretch")
-
-        # 추천 근거
-        reason = score_row.get("recommended_policy_reason", "")
-        if reason and not (isinstance(reason, float) and pd.isna(reason)):
-            st.markdown(
-                f"<div style='background:#F7FAFC;border-left:3px solid #2980B9;"
-                f"padding:7px 10px;border-radius:4px;margin-top:4px;'>"
-                f"<div style='font-size:0.71rem;font-weight:700;color:#4A5568;"
-                f"margin-bottom:2px;'>추천 근거</div>"
-                f"<div style='font-size:0.73rem;color:#2D3748;line-height:1.55;'>{reason}</div>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        st.markdown(
-            "<div style='font-size:0.67rem;color:#A0AEC0;margin-top:6px;'>"
-            "※ 정책 적합도 점수는 지표 기반 우선검토 점수이며 실제 지원 확정이 아닙니다.</div>",
-            unsafe_allow_html=True,
-        )
+    pass  # 제거됨
 
 
 def _render_school_detail_table(row: pd.Series):
@@ -2164,38 +2087,8 @@ def show_type_analysis(df: pd.DataFrame):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _KMEANS_PATH  = ROOT / "data" / "processed" / "gyeongnam_high_schools_policy_feedback_kmeans.xlsx"
-_SCORES_PATH  = ROOT / "data" / "processed" / "gyeongnam_high_schools_policy_recommendation_scores.xlsx"
-
-# 정책 적합도 컬럼 → 한글명
-_FIT_COLS = {
-    "fit_counselor_assignment":    "전문상담교사 배치 또는 순회상담 연계",
-    "fit_wee_class":               "Wee클래스 신설 또는 운영 보완",
-    "fit_wee_center_linkage":      "Wee센터 연계 강화",
-    "fit_school_violence_support": "학교폭력 피해 관련 상담지원 강화",
-    "fit_high_demand_program":     "고수요 상담 프로그램 확대",
-    "fit_monitoring":              "현 수준 유지 및 정기 모니터링",
-}
-_FIT_COLORS = ["#C0392B","#E67E22","#2980B9","#9B59B6","#1ABC9C","#27AE60"]
-
-
-def _load_scores_data():
-    """정책 적합도 점수 파일 로드 (없으면 None)."""
-    if not _SCORES_PATH.exists():
-        return None
-    try:
-        return pd.read_excel(_SCORES_PATH,
-                             sheet_name="policy_recommendation_table",
-                             dtype={"school_code": str})
-    except Exception:
-        return None
-
-
-def _get_school_scores(df_scores, school_code: str):
-    """school_code로 점수 행 반환 (없으면 None)."""
-    if df_scores is None or "school_code" not in df_scores.columns:
-        return None
-    rows = df_scores[df_scores["school_code"] == str(school_code)]
-    return rows.iloc[0] if not rows.empty else None
+def _load_scores_data(): return None   # 제거됨
+def _get_school_scores(df, code): return None  # 제거됨
 
 _KMEANS_COLORS = {
     "수요 대비 공급 취약 군집": "#C0392B",
@@ -3579,7 +3472,6 @@ def show_pulp_scenario(df: pd.DataFrame):
 def _load_opt_data():
     """최적화용 데이터 파일 우선순위 로드."""
     candidates = [
-        (_SCORES_PATH,  "policy_recommendation_table"),
         (_KMEANS_PATH,  "kmeans_school_table"),
         (DATA_PATH,     SHEET),
     ]
@@ -4143,22 +4035,6 @@ def _render_school_sim(df: pd.DataFrame):
     )
     if has_missing:
         st.warning("⚠️ 일부 지표 결측으로 레이더 차트 해석에 주의가 필요합니다.")
-
-    # ── AI 추천 정책 안내 (점수 파일 있을 때) ────────────────────────────────
-    _sim_scores_df  = _load_scores_data()
-    _sim_score_row  = _get_school_scores(_sim_scores_df, sel_code)
-    if _sim_score_row is not None:
-        p1 = _sim_score_row.get("recommended_policy_1", "")
-        s1 = _sim_score_row.get("recommended_policy_1_score", "")
-        if p1:
-            st.markdown(
-                f"<div style='background:#EBF2FF;border-left:3px solid #2E5FA3;"
-                f"padding:8px 12px;border-radius:4px;font-size:0.76rem;color:#1E3A5F;"
-                f"margin-bottom:8px;'>"
-                f"🤖 <b>AI 추천 1순위 정책:</b> {p1} "
-                f"<span style='color:#2980B9;'>(적합도 점수: {s1:.3f})</span></div>",
-                unsafe_allow_html=True,
-            )
 
     # ── KPI 4개 카드 ──────────────────────────────────────────────────────────
     _render_school_sim_kpi(row, csi_b, csi_a, csi_chg, cdi_b, ps_b, ps_a, ps_chg)
@@ -5270,12 +5146,19 @@ def show_data_description(df: pd.DataFrame):
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ── AI 기반 정책 제안 탭 ──────────────────────────────────────────────────────
-# ══════════════════════════════════════════════════════════════════════════════
+def show_ai_policy(df): pass  # 제거됨
+def _render_ai_policy_kpi(df): pass
+def _render_ai_school_diag(row): pass
+def _render_ai_rank_cards(row): pass
+def _render_ai_fit_bar(row): pass
+def _render_ai_reason_card(row): pass
+def _render_policy_distribution(df): pass
+def _render_priority_target_table(df): pass
+def _render_policy_top5_expander(df): pass
 
-def show_ai_policy(df: pd.DataFrame):
-    """AI 기반 정책 제안 탭 — 학교별 정책 추천·적합도·브리핑 통합."""
+
+def _PLACEHOLDER_AI_POLICY():
+    """원본 코드 제거됨"""
 
     # ── 헤더 ─────────────────────────────────────────────────────────────────
     st.markdown(
