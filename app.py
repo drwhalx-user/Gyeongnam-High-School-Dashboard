@@ -13,6 +13,13 @@ try:
 except ImportError:
     _GENAI_AVAILABLE = False
 
+# PuLP 임포트 (없으면 안내 후 해당 섹션만 비활성화)
+try:
+    import pulp as _pulp
+    _PULP_AVAILABLE = True
+except ImportError:
+    _PULP_AVAILABLE = False
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -3069,12 +3076,636 @@ def show_simulation(df: pd.DataFrame):
     )
     _render_school_sim(df)
 
+    # ── 제약조건 기반 자원배치 시나리오 (PuLP) ──────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
+        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+        "📐 제약조건 기반 상담지원 자원배치 시나리오</h2>"
+        "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
+        "제한된 상담지원 자원 조건에서 우선지원점수 개선폭이 큰 학교-정책 조합을 제안합니다. "
+        "PuLP 기반 0-1 정수계획 최적화를 사용합니다.</p>",
+        unsafe_allow_html=True,
+    )
+    show_pulp_scenario(df)
+
     st.markdown(
         "<div class='footer-note'>"
         "※ 시뮬레이션 결과는 지수 산식(CSI 평균) 기반 가상 시나리오이며 실제 정책 효과를 보장하지 않습니다. "
         "| CSI = (상담인력공급 + Wee클래스 + Wee센터접근성) / 3 "
         "| 우선지원점수 = CDI − CSI"
         "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── PuLP 기반 제약조건 자원배치 시나리오 함수 ─────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _build_pulp_candidates(df: pd.DataFrame) -> pd.DataFrame:
+    """학교-정책별 후보 데이터프레임과 단독 개선폭 계산."""
+    req = ["counseling_staff_supply_score", "wee_class_score",
+           "wee_center_access_score", "CSI", "CDI", "priority_score"]
+    valid = df.dropna(subset=[c for c in req if c in df.columns]).copy()
+    rows = []
+    for _, row in valid.iterrows():
+        staff  = float(row["counseling_staff_supply_score"])
+        wee    = float(row["wee_class_score"])
+        center = float(row["wee_center_access_score"])
+        csi_b  = float(row["CSI"])
+        ps_b   = float(row["priority_score"])
+        base = {
+            "school_code": row["school_code"],
+            "school_name": row.get("school_name", ""),
+            "sigungu":     row.get("sigungu", ""),
+            "before_CSI":  round(csi_b, 3),
+            "before_PS":   round(ps_b, 3),
+            "CDI":         round(float(row["CDI"]), 3),
+            "orig_staff":  staff, "orig_wee": wee, "orig_center": center,
+            "priority_level":        row.get("priority_level", ""),
+            "policy_strategy_group": row.get("policy_strategy_group", ""),
+            "lat": row.get("school_latitude", None),
+            "lon": row.get("school_longitude", None),
+        }
+        # Policy A: 상담인력 지원 (한 단계 개선)
+        if staff < 1.0:
+            new_s = 0.4 if staff < 0.4 else (0.7 if staff < 0.7 else 1.0)
+            d_csi = (new_s - staff) / 3
+            if d_csi > 0:
+                rows.append({**base, "policy": "counselor_support",
+                             "policy_label": "상담인력 지원",
+                             "new_score": new_s,
+                             "delta_csi": round(d_csi, 5),
+                             "delta_ps":  round(d_csi, 5)})
+        # Policy B: Wee클래스 신설
+        if wee < 1.0:
+            d_csi = (1.0 - wee) / 3
+            if d_csi > 0:
+                rows.append({**base, "policy": "wee_class_support",
+                             "policy_label": "Wee클래스 신설·보완",
+                             "new_score": 1.0,
+                             "delta_csi": round(d_csi, 5),
+                             "delta_ps":  round(d_csi, 5)})
+        # Policy C: Wee센터 연계지원 (sim_effective 별도 변수)
+        if center < 0.7:
+            sim_eff = 0.7
+            d_csi = (sim_eff - center) / 3
+            if d_csi > 0:
+                rows.append({**base, "policy": "wee_linkage_support",
+                             "policy_label": "Wee센터 연계지원 강화",
+                             "new_score": sim_eff,
+                             "delta_csi": round(d_csi, 5),
+                             "delta_ps":  round(d_csi, 5)})
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+def _run_pulp_optimization(
+    cands: pd.DataFrame,
+    n_a: int, n_b: int, n_c: int,
+    allocation_mode: str, objective_mode: str,
+    use_cap: bool, max_cap: int,
+) -> tuple:
+    """PuLP 0-1 정수계획 최적화. (result_df, status_str) 반환."""
+    if not _PULP_AVAILABLE or cands.empty:
+        return pd.DataFrame(), "PuLP 미설치 또는 후보 없음"
+
+    # priority_need_weight (목적함수 옵션2)
+    ps_vals = cands.drop_duplicates("school_code").set_index("school_code")["before_PS"]
+    ps_min, ps_max = ps_vals.min(), ps_vals.max()
+    need_w = {k: float((v - ps_min)/(ps_max - ps_min)) if ps_max > ps_min else 1.0
+              for k, v in ps_vals.items()}
+
+    pol_limits = {"counselor_support": n_a, "wee_class_support": n_b, "wee_linkage_support": n_c}
+
+    prob = _pulp.LpProblem("resource_alloc", _pulp.LpMaximize)
+    x = {}
+    for _, r in cands.iterrows():
+        key = (str(r["school_code"]), r["policy"])
+        x[key] = _pulp.LpVariable(f"x_{r['school_code']}_{r['policy']}", cat="Binary")
+
+    # 목적함수
+    if "우선지원 필요도" in objective_mode:
+        prob += _pulp.lpSum(
+            r["delta_ps"] * (1 + need_w.get(str(r["school_code"]), 0)) * x[(str(r["school_code"]), r["policy"])]
+            for _, r in cands.iterrows()
+        )
+    else:
+        prob += _pulp.lpSum(
+            r["delta_ps"] * x[(str(r["school_code"]), r["policy"])]
+            for _, r in cands.iterrows()
+        )
+
+    # 제약1: 정책별 자원 수
+    for pol, lim in pol_limits.items():
+        sub = cands[cands["policy"] == pol]
+        if not sub.empty:
+            prob += _pulp.lpSum(x[(str(r["school_code"]), pol)] for _, r in sub.iterrows()) <= lim
+
+    # 제약2: 분산 모드 — 학교당 최대 1개 정책
+    if "분산" in allocation_mode:
+        for scode in cands["school_code"].unique():
+            sc = cands[cands["school_code"] == scode]
+            if len(sc) > 1:
+                prob += _pulp.lpSum(x[(str(r["school_code"]), r["policy"])] for _, r in sc.iterrows()) <= 1
+
+    # 제약3: 지역별 집중 제한
+    if use_cap and "sigungu" in cands.columns:
+        for sgg in cands["sigungu"].dropna().unique():
+            sg = cands[cands["sigungu"] == sgg]
+            prob += _pulp.lpSum(x[(str(r["school_code"]), r["policy"])] for _, r in sg.iterrows()) <= max_cap
+
+    prob.solve(_pulp.PULP_CBC_CMD(msg=0))
+    status_str = _pulp.LpStatus[prob.status]
+    if prob.status != 1:
+        return pd.DataFrame(), status_str
+
+    selected = [r.to_dict() for _, r in cands.iterrows()
+                if _pulp.value(x.get((str(r["school_code"]), r["policy"]), None)) is not None
+                and (_pulp.value(x[(str(r["school_code"]), r["policy"])]) or 0) > 0.5]
+    return pd.DataFrame(selected), status_str
+
+
+def _pulp_build_result(sel_df: pd.DataFrame) -> pd.DataFrame:
+    """선택된 행에서 학교별 종합 시뮬레이션 결과 데이터프레임 생성."""
+    rows = []
+    for scode, grp in sel_df.groupby("school_code"):
+        r0 = grp.iloc[0]
+        staff  = float(r0["orig_staff"])
+        wee    = float(r0["orig_wee"])
+        center = float(r0["orig_center"])
+        pols   = grp["policy"].tolist()
+        labels = grp["policy_label"].tolist()
+
+        sim_s = 0.4 if staff < 0.4 else (0.7 if staff < 0.7 else 1.0) if "counselor_support" in pols else staff
+        sim_w = 1.0 if "wee_class_support" in pols else wee
+        sim_c = 0.7 if "wee_linkage_support" in pols else center
+
+        sim_csi = (sim_s + sim_w + sim_c) / 3
+        sim_ps  = float(r0["CDI"]) - sim_csi
+        imp_ps  = float(r0["before_PS"]) - sim_ps
+        imp_csi = sim_csi - float(r0["before_CSI"])
+
+        reason_parts = []
+        if "counselor_support"   in pols: reason_parts.append("상담인력 공급 수준 보완 시 개선폭 확인")
+        if "wee_class_support"   in pols: reason_parts.append("Wee클래스 미운영 또는 운영 보완 필요성 반영")
+        if "wee_linkage_support" in pols: reason_parts.append("거리 기반 접근성 제약 연계지원 보완 시나리오 반영")
+
+        rows.append({
+            "school_code":                str(scode),
+            "school_name":                r0["school_name"],
+            "sigungu":                    r0["sigungu"],
+            "applied_policies":           " / ".join(labels),
+            "pol_codes":                  pols,
+            "before_CSI":                 round(float(r0["before_CSI"]), 3),
+            "simulated_CSI":              round(sim_csi, 3),
+            "csi_improvement":            round(imp_csi, 3),
+            "before_priority_score":      round(float(r0["before_PS"]), 3),
+            "simulated_priority_score":   round(sim_ps, 3),
+            "priority_score_improvement": round(imp_ps, 3),
+            "priority_level":             str(r0.get("priority_level", "")),
+            "policy_strategy_group":      str(r0.get("policy_strategy_group", "")),
+            "recommended_reason":         " / ".join(reason_parts),
+            "lat": r0.get("lat", None),
+            "lon": r0.get("lon", None),
+        })
+    return (pd.DataFrame(rows)
+            .sort_values("priority_score_improvement", ascending=False)
+            .reset_index(drop=True))
+
+
+def _render_pulp_kpi(result_df: pd.DataFrame):
+    n_sch    = len(result_df)
+    n_alloc  = result_df["pol_codes"].apply(len).sum()
+    csi_b    = result_df["before_CSI"].mean()
+    csi_a    = result_df["simulated_CSI"].mean()
+    ps_b     = result_df["before_priority_score"].mean()
+    ps_a     = result_df["simulated_priority_score"].mean()
+    total_imp = result_df["priority_score_improvement"].sum()
+
+    k1,k2,k3,k4,k5 = st.columns(5, gap="small")
+    for col, color, label, value, sub in [
+        (k1, "#2E5FA3", "추천 지원 학교 수",      f"{n_sch}개교",     "고유 학교 기준"),
+        (k2, "#9B59B6", "추천 지원 건수",          f"{n_alloc}건",     "학교-정책 조합"),
+        (k3, "#1ABC9C", "평균 CSI 변화",           f"{csi_b:.3f}→{csi_a:.3f}", f"+{csi_a-csi_b:.3f}"),
+        (k4, "#E67E22", "평균 우선지원점수 변화",  f"{ps_b:.3f}→{ps_a:.3f}",   f"{ps_a-ps_b:.3f}"),
+        (k5, "#C0392B", "총 개선폭 합계",          f"{total_imp:.3f}", "PS improvement 합"),
+    ]:
+        with col:
+            st.markdown(
+                f"<div style='background:white;border-radius:10px;padding:12px 10px;"
+                f"box-shadow:0 2px 8px rgba(0,0,0,0.08);border-top:3px solid {color};"
+                f"min-height:95px;'>"
+                f"<div style='font-size:0.70rem;color:#718096;margin-bottom:4px;'>{label}</div>"
+                f"<div style='font-size:0.90rem;font-weight:700;color:{color};line-height:1.3;'>{value}</div>"
+                f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:2px;'>{sub}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def _render_pulp_table(result_df: pd.DataFrame):
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "🏆 자원배치 시나리오 추천 결과 (개선폭 내림차순)</div>",
+            unsafe_allow_html=True,
+        )
+        disp = result_df.copy()
+        disp.insert(0, "순위", range(1, len(disp)+1))
+        show_cols = {
+            "순위": "순위", "school_name": "학교명", "sigungu": "시군구",
+            "applied_policies": "추천 지원 정책",
+            "before_CSI": "기존 CSI", "simulated_CSI": "적용 후 CSI",
+            "csi_improvement": "CSI 변화",
+            "before_priority_score": "기존 PS", "simulated_priority_score": "적용 후 PS",
+            "priority_score_improvement": "개선폭",
+            "priority_level": "기존 등급", "policy_strategy_group": "전략그룹",
+            "recommended_reason": "추천 근거",
+        }
+        avail = {k: v for k, v in show_cols.items() if k in disp.columns or k == "순위"}
+        tbl = disp[[c for c in avail if c in disp.columns]].rename(columns=avail)
+        st.dataframe(tbl, use_container_width=True, height=300)
+        # 다운로드
+        dl_cols = ["school_code","school_name","sigungu","applied_policies",
+                   "before_CSI","simulated_CSI","csi_improvement",
+                   "before_priority_score","simulated_priority_score",
+                   "priority_score_improvement","priority_level","policy_strategy_group"]
+        dl_df = result_df[[c for c in dl_cols if c in result_df.columns]].copy()
+        st.download_button(
+            "⬇️ 자원배치 시나리오 결과 다운로드 (CSV)",
+            data=dl_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+            file_name="resource_allocation_scenario_results.csv",
+            mime="text/csv",
+        )
+
+
+def _render_pulp_policy_bar(result_df: pd.DataFrame):
+    pol_labels = ["상담인력 지원", "Wee클래스 신설·보완", "Wee센터 연계지원 강화"]
+    pol_codes  = ["counselor_support", "wee_class_support", "wee_linkage_support"]
+    counts = [result_df["pol_codes"].apply(lambda x: p in x).sum() for p in pol_codes]
+    fig = go.Figure(go.Bar(
+        x=pol_labels, y=counts,
+        marker_color=["#C0392B", "#E67E22", "#2980B9"],
+        text=counts, textposition="outside", textfont=dict(size=11),
+    ))
+    fig.update_layout(
+        title=dict(text="정책별 추천 지원 학교 수", font=dict(size=12, color="#1E3A5F"), x=0),
+        height=260, margin=dict(l=10, r=10, t=40, b=30),
+        yaxis=dict(tickfont=dict(size=9)),
+        xaxis=dict(tickfont=dict(size=9)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="Malgun Gothic, sans-serif"),
+    )
+    with st.container(border=True):
+        st.plotly_chart(fig, width="stretch")
+
+
+def _render_pulp_before_after_bar(result_df: pd.DataFrame):
+    csi_b = result_df["before_CSI"].mean()
+    csi_a = result_df["simulated_CSI"].mean()
+    ps_b  = result_df["before_priority_score"].mean()
+    ps_a  = result_df["simulated_priority_score"].mean()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="적용 전", x=["CSI","우선지원점수"], y=[csi_b, ps_b],
+                         marker_color="rgba(149,165,166,0.7)",
+                         text=[f"{csi_b:.3f}", f"{ps_b:.3f}"],
+                         textposition="outside", textfont=dict(size=10)))
+    fig.add_trace(go.Bar(name="적용 후", x=["CSI","우선지원점수"], y=[csi_a, ps_a],
+                         marker_color="#2E5FA3",
+                         text=[f"{csi_a:.3f}", f"{ps_a:.3f}"],
+                         textposition="outside", textfont=dict(size=10)))
+    y_min = min(csi_b, csi_a, ps_b, ps_a) - 0.05
+    y_max = max(csi_b, csi_a, ps_b, ps_a) + 0.12
+    fig.update_layout(
+        title=dict(text="지원 적용 전후 평균 지수 변화", font=dict(size=12, color="#1E3A5F"), x=0),
+        barmode="group", height=260, margin=dict(l=10, r=10, t=40, b=40),
+        yaxis=dict(range=[y_min, y_max], tickfont=dict(size=9),
+                   zeroline=True, zerolinecolor="#BDC3C7"),
+        legend=dict(orientation="h", y=-0.25, x=0, font=dict(size=9)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="Malgun Gothic, sans-serif"),
+    )
+    with st.container(border=True):
+        st.plotly_chart(fig, width="stretch")
+        st.markdown(
+            "<div style='font-size:0.68rem;color:#718096;margin-top:-4px;'>"
+            "※ 우선지원점수는 낮아질수록 수요 대비 공급 부족이 완화되는 방향입니다.</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_pulp_top10_bar(result_df: pd.DataFrame):
+    top10 = result_df.nlargest(10, "priority_score_improvement")
+    fig = go.Figure(go.Bar(
+        x=top10["priority_score_improvement"], y=top10["school_name"],
+        orientation="h", marker_color="#2E5FA3",
+        text=[f"{v:.3f}" for v in top10["priority_score_improvement"]],
+        textposition="outside", textfont=dict(size=9),
+    ))
+    fig.update_layout(
+        title=dict(text="우선지원점수 개선폭 상위 학교 (TOP 10)",
+                   font=dict(size=12, color="#1E3A5F"), x=0),
+        height=320, margin=dict(l=10, r=50, t=40, b=20),
+        xaxis=dict(title="개선폭 (클수록 효과 큼)", tickfont=dict(size=9)),
+        yaxis=dict(tickfont=dict(size=10)),
+        plot_bgcolor="white", paper_bgcolor="white",
+        font=dict(family="Malgun Gothic, sans-serif"),
+    )
+    with st.container(border=True):
+        st.plotly_chart(fig, width="stretch")
+
+
+def _render_pulp_map(result_df: pd.DataFrame):
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:8px;'>"
+            "📍 자원배치 시나리오 추천 학교 분포</div>",
+            unsafe_allow_html=True,
+        )
+        valid = result_df.dropna(subset=["lat","lon"]).copy()
+        if valid.empty:
+            st.info("학교 좌표 정보가 없어 추천 학교 지도 표시는 생략합니다.")
+            return
+
+        pol_color_map = {
+            frozenset(["counselor_support"]):   [41, 128, 185, 220],
+            frozenset(["wee_class_support"]):   [230, 126, 34, 220],
+            frozenset(["wee_linkage_support"]):  [26, 188, 156, 220],
+        }
+        def _get_color(pols):
+            k = frozenset(pols)
+            return pol_color_map.get(k, [142, 68, 173, 220])  # 복수=보라
+
+        valid["color"] = valid["pol_codes"].apply(_get_color)
+        valid["ps_d"]  = valid["before_priority_score"].round(3).astype(str)
+        valid["spa_d"] = valid["simulated_priority_score"].round(3).astype(str)
+        valid["imp_d"] = valid["priority_score_improvement"].round(3).astype(str)
+
+        school_layer = pdk.Layer(
+            "ScatterplotLayer", data=valid,
+            get_position=["lon", "lat"], get_color="color",
+            get_radius=900, pickable=True, opacity=0.9, stroked=True, filled=True,
+            line_width_min_pixels=2, get_line_color=[255,255,255,200], auto_highlight=True,
+        )
+        layers = [school_layer]
+        wee_df, _ = _load_wee_centers()
+        if wee_df is not None and not wee_df.empty:
+            wee_map = wee_df.copy()
+            wee_map["label"] = wee_map.get("wee_center_name", pd.Series(["Wee센터"]*len(wee_map)))
+            wee_map["color"] = [WEE_CENTER_COLOR] * len(wee_map)
+            layers.append(pdk.Layer(
+                "ScatterplotLayer", data=wee_map,
+                get_position=["wee_center_longitude","wee_center_latitude"],
+                get_color="color", get_radius=1100, pickable=True, opacity=0.85,
+                stroked=True, filled=True, line_width_min_pixels=2,
+                get_line_color=[255,255,255,180],
+            ))
+
+        view = pdk.ViewState(latitude=35.23, longitude=128.15, zoom=7.8, pitch=0)
+        deck = pdk.Deck(
+            layers=layers, initial_view_state=view,
+            map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+            tooltip={
+                "html": "<b>{school_name}</b><br/>{sigungu}<br/>"
+                        "추천: {applied_policies}<br/>"
+                        "기존 PS: {ps_d} → 적용 후: {spa_d}<br/>"
+                        "개선폭: {imp_d}",
+                "style": {"backgroundColor":"#1E3A5F","color":"white","fontSize":"12px"},
+            },
+        )
+        st.pydeck_chart(deck, width="stretch")
+        st.markdown(
+            "<div style='font-size:0.68rem;color:#718096;margin-top:3px;'>"
+            "🔵 파랑: 상담인력 지원 &nbsp;|&nbsp; 🟠 주황: Wee클래스 &nbsp;|&nbsp; "
+            "🟢 청록: Wee센터 연계 &nbsp;|&nbsp; 🟣 보라: 복수 지원 &nbsp;|&nbsp; "
+            "🔷 남색: Wee센터</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _render_pulp_policy_expander(result_df: pd.DataFrame):
+    with st.expander("▶ 정책별 추천 학교 상세 목록"):
+        for pol_code, pol_label in [
+            ("counselor_support",   "상담인력 지원 추천 학교"),
+            ("wee_class_support",   "Wee클래스 신설·보완 추천 학교"),
+            ("wee_linkage_support", "Wee센터 연계지원 강화 추천 학교"),
+        ]:
+            sub = result_df[result_df["pol_codes"].apply(lambda x: pol_code in x)].copy()
+            if sub.empty:
+                continue
+            st.markdown(
+                f"<div style='font-size:0.80rem;font-weight:700;color:#2E5FA3;"
+                f"margin:10px 0 4px;'>📌 {pol_label} ({len(sub)}개교)</div>",
+                unsafe_allow_html=True,
+            )
+            show_cols = ["school_name","sigungu","before_CSI","simulated_CSI",
+                         "before_priority_score","simulated_priority_score",
+                         "priority_score_improvement"]
+            tbl = sub[[c for c in show_cols if c in sub.columns]].rename(columns={
+                "school_name":"학교명","sigungu":"시군구",
+                "before_CSI":"기존 CSI","simulated_CSI":"적용 후 CSI",
+                "before_priority_score":"기존 PS","simulated_priority_score":"적용 후 PS",
+                "priority_score_improvement":"개선폭",
+            })
+            st.dataframe(tbl.reset_index(drop=True), use_container_width=True, height=200)
+
+
+def _render_pulp_interpretation(result_df: pd.DataFrame, params: dict):
+    n_sch   = len(result_df)
+    n_alloc = result_df["pol_codes"].apply(len).sum()
+    csi_b   = result_df["before_CSI"].mean()
+    csi_a   = result_df["simulated_CSI"].mean()
+    ps_b    = result_df["before_priority_score"].mean()
+    ps_a    = result_df["simulated_priority_score"].mean()
+    scope   = params.get("scope","전체")
+    mode    = params.get("mode","")
+    cap_on  = params.get("cap", False)
+
+    body = (
+        f"입력한 자원 조건에서 총 {n_sch}개 학교, {n_alloc}건의 상담지원 자원 배치가 제안되었습니다. "
+        f"추천 학교의 평균 CSI는 {csi_b:.3f}에서 {csi_a:.3f}로 변화하며, "
+        f"평균 우선지원점수는 {ps_b:.3f}에서 {ps_a:.3f}로 변화합니다. "
+        f"이는 현재 지수 산식 기준으로 수요 대비 공급 부족 정도가 완화되는 방향의 시나리오 결과입니다."
+    )
+    if "분산" in mode:
+        body += " 지원 분산 우선 방식이 적용되어 학교당 최대 1개 정책이 배정되었습니다."
+    if cap_on:
+        body += f" 지역별 배치 집중 제한(최대 {params.get('max_cap','-')}건/시군구)이 적용되었습니다."
+    body += (" 다만 실제 배치 결정에는 예산, 전문인력 확보 가능성, 학교 현장 의견, "
+             "이동시간 기반 접근성 등을 추가로 검토해야 합니다.")
+
+    items = [
+        ("#2E5FA3", f"대상: {scope} | 자원: 상담인력 {params.get('n_a',0)}교 / "
+                    f"Wee클래스 {params.get('n_b',0)}교 / Wee센터 {params.get('n_c',0)}교"),
+        ("#1ABC9C", f"평균 CSI: {csi_b:.3f} → {csi_a:.3f} (+{csi_a-csi_b:.3f})"),
+        ("#E67E22", f"평균 우선지원점수: {ps_b:.3f} → {ps_a:.3f} ({ps_a-ps_b:.3f})"),
+        ("#F39C12", body),
+    ]
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+            "💡 시나리오 해석</div>",
+            unsafe_allow_html=True,
+        )
+        for color, text in items:
+            st.markdown(
+                f"<div style='display:flex;gap:8px;margin-bottom:8px;padding:7px 10px;"
+                f"background:#F7FAFC;border-radius:6px;border-left:3px solid {color};'>"
+                f"<p style='font-size:0.76rem;color:#2D3748;margin:0;line-height:1.6;'>{text}</p>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def show_pulp_scenario(df: pd.DataFrame):
+    """PuLP 기반 제약조건 자원배치 시나리오 메인 함수."""
+    if not _PULP_AVAILABLE:
+        st.error("PuLP 패키지가 설치되지 않았습니다. `pip install pulp` 후 재실행하세요.")
+        return
+
+    df_opt = _load_opt_data()
+    if df_opt is None:
+        st.warning("최적화에 필요한 데이터 파일을 찾을 수 없습니다.")
+        return
+
+    req = ["school_code","school_name","sigungu",
+           "counseling_staff_supply_score","wee_class_score","wee_center_access_score",
+           "CSI","CDI","priority_score"]
+    miss = [c for c in req if c not in df_opt.columns]
+    if miss:
+        st.error(f"필수 변수 누락: {miss}")
+        return
+
+    n_total = len(df_opt)
+
+    st.markdown(
+        "<div style='background:#FEF9E7;border-left:3px solid #F39C12;"
+        "padding:7px 12px;border-radius:4px;font-size:0.74rem;color:#7D6608;"
+        "margin-bottom:12px;'>"
+        "⚠️ 본 결과는 실제 지원 배치의 확정안이나 정책 효과 예측값이 아니라, "
+        "입력한 자원 조건과 현재 지수 산식에 따른 의사결정 지원 시나리오입니다."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── 입력 패널 ─────────────────────────────────────────────────────────────
+    inp1, inp2 = st.columns([1, 1], gap="small")
+    with inp1:
+        with st.container(border=True):
+            st.markdown("<div style='font-size:0.84rem;font-weight:700;color:#1E3A5F;margin-bottom:8px;'>⚙️ 자원 수 입력</div>", unsafe_allow_html=True)
+            n_a = st.number_input("상담인력 배치·순회상담 가능 학교 수",  0, n_total, 5,  key="pulp_na")
+            n_b = st.number_input("Wee클래스 신설·운영 보완 가능 학교 수", 0, n_total, 3,  key="pulp_nb")
+            n_c = st.number_input("Wee센터 연계지원 강화 가능 학교 수",    0, n_total, 10, key="pulp_nc")
+
+    with inp2:
+        with st.container(border=True):
+            st.markdown("<div style='font-size:0.84rem;font-weight:700;color:#1E3A5F;margin-bottom:8px;'>🎯 배치 조건</div>", unsafe_allow_html=True)
+            scope_opts = ["전체 학교", "우선지원점수 상위 20개교", "우선지원점수가 0보다 큰 학교"]
+            if "policy_strategy_group" in df_opt.columns:
+                scope_opts += ["최우선 개입형 학교","우선 보완형 학교","인력 취약형 학교","접근성 보완형 학교"]
+            alloc_scope = st.selectbox("분석 대상 범위", scope_opts, key="pulp_scope")
+            alloc_mode  = st.radio("배치 방식", ["집중 지원 허용","지원 분산 우선"],
+                                   key="pulp_mode",
+                                   help="집중: 한 학교 복수 정책 가능 | 분산: 학교당 최대 1개 정책")
+            obj_mode    = st.selectbox("최적화 목표",
+                                       ["전체 우선지원점수 개선폭 최대화",
+                                        "우선지원 필요도가 높은 학교의 개선 우선"],
+                                       key="pulp_obj")
+            use_cap = st.checkbox("지역별 배치 집중 제한", key="pulp_cap",
+                                  help="특정 시군구 집중 방지 시나리오 비교용 선택 기능")
+            max_cap = max(1, (n_a + n_b + n_c) // 2 + 1)
+            if use_cap:
+                total_res = n_a + n_b + n_c
+                max_cap = st.number_input("한 시군구 최대 배정 건수", 1, max(1, total_res),
+                                          max(1, total_res // 2 + 1), key="pulp_maxcap")
+
+    # ── 실행 버튼 ─────────────────────────────────────────────────────────────
+    run_btn = st.button("📐 자원배치 시나리오 실행", key="pulp_run")
+
+    if n_a + n_b + n_c == 0:
+        st.info("적용 가능한 자원이 0개입니다. 자원 수를 1 이상 입력하세요.")
+        return
+
+    if not run_btn and "pulp_result" not in st.session_state:
+        st.markdown(
+            "<div style='font-size:0.74rem;color:#A0AEC0;margin-top:6px;'>"
+            "자원 조건 입력 후 위 버튼을 눌러 시나리오를 실행하세요.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    if run_btn:
+        grp_col = "policy_strategy_group"
+        scope_map = {
+            "전체 학교":                df_opt,
+            "우선지원점수 상위 20개교": df_opt.nlargest(20, "priority_score"),
+            "우선지원점수가 0보다 큰 학교": df_opt[df_opt["priority_score"] > 0],
+            "최우선 개입형 학교": df_opt[df_opt[grp_col] == "최우선 개입형"] if grp_col in df_opt.columns else df_opt,
+            "우선 보완형 학교":   df_opt[df_opt[grp_col] == "우선 보완형"]   if grp_col in df_opt.columns else df_opt,
+            "인력 취약형 학교":   df_opt[df_opt[grp_col] == "인력 취약형"]   if grp_col in df_opt.columns else df_opt,
+            "접근성 보완형 학교": df_opt[df_opt[grp_col] == "접근성 보완형"] if grp_col in df_opt.columns else df_opt,
+        }
+        df_scope = scope_map.get(alloc_scope, df_opt)
+        if df_scope.empty:
+            st.warning("선택한 범위에 대상 학교가 없습니다.")
+            return
+
+        with st.spinner("PuLP 최적화 계산 중..."):
+            cands = _build_pulp_candidates(df_scope)
+            if cands.empty:
+                st.info("개선효과가 있는 후보가 없습니다.")
+                return
+            sel_df, status = _run_pulp_optimization(
+                cands, n_a, n_b, n_c, alloc_mode, obj_mode, use_cap, max_cap
+            )
+
+        if sel_df.empty:
+            st.warning(f"추천 결과가 없습니다 (상태: {status}). 자원 수나 대상 범위를 조정해 보세요.")
+            return
+
+        result_df = _pulp_build_result(sel_df)
+        st.session_state["pulp_result"] = result_df
+        st.session_state["pulp_status"] = status
+        st.session_state["pulp_params"] = {
+            "scope": alloc_scope, "mode": alloc_mode, "obj": obj_mode,
+            "cap": use_cap, "max_cap": max_cap,
+            "n_a": n_a, "n_b": n_b, "n_c": n_c,
+        }
+
+    # ── 결과 표시 ─────────────────────────────────────────────────────────────
+    if "pulp_result" not in st.session_state or st.session_state["pulp_result"].empty:
+        return
+
+    result_df = st.session_state["pulp_result"]
+    params    = st.session_state.get("pulp_params", {})
+    status    = st.session_state.get("pulp_status", "")
+
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+    _render_pulp_kpi(result_df)
+    st.markdown("<div style='margin:25px 0;'></div>", unsafe_allow_html=True)
+
+    tbl_col, map_col = st.columns([1.4, 1], gap="small")
+    with tbl_col:
+        _render_pulp_table(result_df)
+    with map_col:
+        _render_pulp_map(result_df)
+
+    g1, g2 = st.columns([1, 1], gap="small")
+    with g1:
+        _render_pulp_policy_bar(result_df)
+    with g2:
+        _render_pulp_before_after_bar(result_df)
+
+    _render_pulp_top10_bar(result_df)
+    _render_pulp_policy_expander(result_df)
+    _render_pulp_interpretation(result_df, params)
+
+    st.markdown(
+        f"<div style='font-size:0.65rem;color:#A0AEC0;margin-top:4px;'>"
+        f"Solver: PuLP CBC | 상태: {status} | 0-1 정수계획 최적화</div>",
         unsafe_allow_html=True,
     )
 
@@ -4629,6 +5260,73 @@ def show_data_description(df: pd.DataFrame):
                     f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
                     f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>"
                     f"{lt}</div>",
+                    unsafe_allow_html=True,
+                )
+
+    # ── PuLP 자원배치 시나리오 설명 섹션 ─────────────────────────────────────
+    with st.container(border=True):
+        st.markdown(
+            "<div style='font-size:0.88rem;font-weight:700;color:#1E3A5F;"
+            "padding-bottom:6px;border-bottom:1px solid #E8EEF6;margin-bottom:10px;'>"
+            "📐 16. 제약조건 기반 상담지원 자원배치 시나리오</div>",
+            unsafe_allow_html=True,
+        )
+        pulp_cols = st.columns(2, gap="small")
+        with pulp_cols[0]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
+                "margin-bottom:6px;'>목적 및 방식</div>"
+                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
+                "· <b>목적</b>: 제한된 자원 조건에서 우선지원점수 개선폭이 큰 학교-정책 조합을 자동 제안<br>"
+                "· <b>도구</b>: Python PuLP 0-1 정수계획 (CBC solver)<br>"
+                "· <b>의사결정 변수</b>: x[학교, 정책] ∈ {0, 1}<br>"
+                "· <b>목적함수1</b>: Σ 개선폭 × x 최대화<br>"
+                "· <b>목적함수2</b>: Σ 개선폭 × (1+우선필요도) × x 최대화<br>"
+                "· <b>산식</b>: simulated_CSI = (sim_staff + sim_wee + sim_eff_center) / 3<br>"
+                "&nbsp;&nbsp;&nbsp;개선폭 = before_PS - simulated_PS"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#2E5FA3;"
+                "margin:10px 0 6px;'>정책별 적용 방식</div>"
+                "<div style='font-size:0.73rem;color:#4A5568;line-height:1.7;'>"
+                "· <b>상담인력 지원</b>: staff_score 한 단계 개선 (0→0.4 / 0.4→0.7 / 0.7→1.0)<br>"
+                "· <b>Wee클래스 신설·보완</b>: wee_class_score → 1.0<br>"
+                "· <b>Wee센터 연계지원</b>: <b>기존 접근성 점수 불변</b>, "
+                "sim_effective_wee_linkage_support_score=0.7 별도 생성 후 CSI 계산에 사용<br>"
+                "· CDI는 수요 지표이므로 변경하지 않음"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with pulp_cols[1]:
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
+                "margin-bottom:6px;'>Wee센터 연계지원 해석 주의사항</div>"
+                "<div style='font-size:0.72rem;color:#4A5568;line-height:1.7;"
+                "background:#FEF9E7;border-left:3px solid #F39C12;padding:6px 10px;"
+                "border-radius:4px;margin-bottom:8px;'>"
+                "wee_center_access_score는 학교-Wee센터 간 직선거리로 산출된 관측값입니다. "
+                "연계지원 강화 시나리오는 물리적 거리가 변경된다는 의미가 아니라, "
+                "이동형 상담·온라인 상담·정기 방문 연계 등을 통해 접근성 제약이 일부 보완되는 "
+                "상황을 가정한 시나리오용 대체 변수입니다."
+                "</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                "<div style='font-size:0.77rem;font-weight:700;color:#C0392B;"
+                "margin-bottom:6px;'>한계</div>",
+                unsafe_allow_html=True,
+            )
+            for lt in [
+                "실제 정책 효과를 추정하지 않음 — 산식 기반 가상 시나리오",
+                "실제 예산·인력 채용 가능성·현장 수요를 직접 반영하지 않음",
+                "점수 구간화로 인해 변화량이 단순화될 수 있음",
+                "입력 제약조건과 지수 산식에 따른 의사결정 지원 결과임",
+            ]:
+                st.markdown(
+                    f"<div style='font-size:0.72rem;color:#4A5568;margin-bottom:5px;"
+                    f"padding-left:8px;border-left:2px solid #C0392B;line-height:1.5;'>{lt}</div>",
                     unsafe_allow_html=True,
                 )
 
