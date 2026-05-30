@@ -50,7 +50,7 @@ section[data-testid="stSidebarContent"] {
     padding-right: 0.5rem !important;
 }
 /* 메뉴 라디오 항목 - 작게 */
-[data-testid="stSidebar"] .stRadio label p { font-size: 0.72rem !important; }
+[data-testid="stSidebar"] .stRadio label p { font-size: 0.82rem !important; }
 /* 필터 selectbox 레이블(시군구, 우선지원등급) - 크게 */
 [data-testid="stSidebar"] .stSelectbox label { font-size: 0.84rem !important; }
 /* selectbox 선택값(전체 등) - 크게 */
@@ -337,9 +337,9 @@ def render_sidebar(df: pd.DataFrame):
                     display:flex;align-items:center;justify-content:center;
                     font-size:0.95rem;flex-shrink:0;'>📊</div>
         <div>
-          <div style='color:#1E3A5F;font-size:0.75rem;font-weight:700;line-height:1.4;'>
+          <div style='color:#1E3A5F;font-size:0.84rem;font-weight:700;line-height:1.4;'>
             경상남도 교육청</div>
-          <div style='color:#718096;font-size:0.68rem;'>상담지원 인프라 분석</div>
+          <div style='color:#718096;font-size:0.75rem;'>상담지원 인프라 분석</div>
         </div>
       </div>
     </div>
