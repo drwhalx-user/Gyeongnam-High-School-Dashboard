@@ -408,7 +408,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
     # 대시보드 소개 카드
     with st.container(border=True):
         st.markdown(
-            "<div style='display:flex;gap:18px;align-items:flex-start;min-height:140px;'>"
+            "<div style='display:flex;gap:18px;align-items:flex-start;min-height:150px;'>"
             "<div style='flex:1;'>"
             "<div style='font-size:0.82rem;font-weight:700;color:#1E3A5F;margin-bottom:6px;'>"
             "📌 이 대시보드는 무엇인가요?</div>"
