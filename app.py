@@ -460,7 +460,7 @@ def render_sidebar(df: pd.DataFrame):
     tabs = [
         "📋 현황 개요", "🗺️ 지역별 분석", "🔍 학교 검색",
         "📊 유형 분석",  "💡 AI 기반 정책 제안",
-        "⚙️ 시뮬레이션",  "ℹ️ 데이터 설명",
+        "⚙️ 시뮬레이션",  "📐 자원배치 시나리오", "ℹ️ 데이터 설명",
     ]
     selected = sb.radio("메뉴", tabs, label_visibility="collapsed")
 
@@ -3076,18 +3076,6 @@ def show_simulation(df: pd.DataFrame):
     )
     _render_school_sim(df)
 
-    # ── 제약조건 기반 자원배치 시나리오 (PuLP) ──────────────────────────────
-    st.markdown(
-        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
-        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
-        "📐 제약조건 기반 상담지원 자원배치 시나리오</h2>"
-        "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
-        "제한된 상담지원 자원 조건에서 우선지원점수 개선폭이 큰 학교-정책 조합을 제안합니다. "
-        "PuLP 기반 0-1 정수계획 최적화를 사용합니다.</p>",
-        unsafe_allow_html=True,
-    )
-    show_pulp_scenario(df)
-
     st.markdown(
         "<div class='footer-note'>"
         "※ 시뮬레이션 결과는 지수 산식(CSI 평균) 기반 가상 시나리오이며 실제 정책 효과를 보장하지 않습니다. "
@@ -3693,7 +3681,7 @@ def show_pulp_scenario(df: pd.DataFrame):
     with map_col:
         _render_pulp_map(result_df)
 
-    g1, g2, g3 = st.columns([1, 1, 1], gap="small")
+    g1, g2, g3 = st.columns([1, 1, 2], gap="small")
     with g1:
         _render_pulp_policy_bar(result_df)
     with g2:
@@ -5924,6 +5912,16 @@ def main():
         show_ai_policy(df)
     elif tab_key == "시뮬레이션":
         show_simulation(df)
+    elif tab_key == "자원배치 시나리오":
+        st.markdown(
+            "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+            "자원배치 시나리오</h1>"
+            "<p style='color:#718096;font-size:0.78rem;margin:0 0 14px 0;'>"
+            "제한된 상담지원 자원 조건에서 PuLP 0-1 정수계획 최적화로 "
+            "우선지원점수 개선폭이 큰 학교-정책 조합을 제안합니다.</p>",
+            unsafe_allow_html=True,
+        )
+        show_pulp_scenario(df)
     elif tab_key == "데이터 설명":
         show_data_description(df)
     else:
