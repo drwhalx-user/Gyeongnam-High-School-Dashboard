@@ -3135,8 +3135,9 @@ def _build_pulp_candidates(df: pd.DataFrame) -> pd.DataFrame:
                              "delta_csi": round(d_csi, 5),
                              "delta_ps":  round(d_csi, 5)})
         # Policy C: Wee센터 연계지원 (sim_effective 별도 변수)
+        # 한 단계 개선: 0.1→0.4, 0.4→0.7 (물리적 거리 불변, 연계지원 효과만 반영)
         if center < 0.7:
-            sim_eff = 0.7
+            sim_eff = 0.4 if center < 0.4 else 0.7
             d_csi = (sim_eff - center) / 3
             if d_csi > 0:
                 rows.append({**base, "policy": "wee_linkage_support",
@@ -3226,7 +3227,7 @@ def _pulp_build_result(sel_df: pd.DataFrame) -> pd.DataFrame:
 
         sim_s = 0.4 if staff < 0.4 else (0.7 if staff < 0.7 else 1.0) if "counselor_support" in pols else staff
         sim_w = 1.0 if "wee_class_support" in pols else wee
-        sim_c = 0.7 if "wee_linkage_support" in pols else center
+        sim_c = (0.4 if center < 0.4 else 0.7) if "wee_linkage_support" in pols else center
 
         sim_csi = (sim_s + sim_w + sim_c) / 3
         sim_ps  = float(r0["CDI"]) - sim_csi
