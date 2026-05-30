@@ -353,8 +353,8 @@ def render_sidebar(df: pd.DataFrame):
 
     # 메뉴
     tabs = [
-        "📋 현황 개요", "🗺️ 지역별 분석", "🔍 학교 검색",
-        "📊 유형 분석",
+        "📋 현황 개요", "📊 유형 분석", "🗺️ 지역별 분석",
+        "🔍 학교 검색",
         "📐 자원배치 시뮬레이션", "ℹ️ 데이터 설명",
     ]
     selected = sb.radio("메뉴", tabs, label_visibility="collapsed")
@@ -422,13 +422,15 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             "🗂️ 탭별 주요 기능</div>"
             "<div style='font-size:0.74rem;color:#4A5568;line-height:1.9;'>"
             "📋 <b>현황 개요</b>: 전체 학교 분포 및 주요 지표 요약<br>"
+            "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
             "🗺️ <b>지역별 분석</b>: 시군구 단위 상담 인프라 비교<br>"
             "🔍 <b>학교 검색</b>: 개별 학교 진단 · 지표 상세 · 맞춤 정책 제안<br>"
-            "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
             "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분"
             "</div></div></div>",
             unsafe_allow_html=True,
         )
+
+    st.markdown("<div style='margin:12px 0;'></div>", unsafe_allow_html=True)
 
     # ── 지표 카드 5개 ─────────────────────────────────────────────────────────
     _render_metric_cards(df, df_all)
@@ -1468,7 +1470,7 @@ def show_school_search(df: pd.DataFrame):
     except Exception:
         pass
 
-    info_col, map_col, kpi_col = st.columns([1.3, 1.0, 1.7], gap="small")
+    info_col, map_col, kpi_col = st.columns([1.3, 1.03, 1.67], gap="small")
     with info_col:
         _render_school_info_card(row, nearest_wee=_near_row_pre, nearest_dist=_near_dist_pre)
     with map_col:
@@ -1597,10 +1599,10 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
         # 2x2 그리드 — 1행
         r1c1, r1c2 = st.columns(2, gap="small")
         with r1c1:
-            st.markdown(_card("#1ABC9C", "CSI", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "130px"),
+            st.markdown(_card("#1ABC9C", "상담공급점수(CSI)", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "130px"),
                         unsafe_allow_html=True)
         with r1c2:
-            st.markdown(_card("#E67E22", "CDI", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "130px"),
+            st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "130px"),
                         unsafe_allow_html=True)
         # 행 간격
         st.markdown("<div style='margin:22px 0;'></div>", unsafe_allow_html=True)
@@ -1979,9 +1981,9 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
         st.pydeck_chart(deck, width="stretch", height=height)
         st.markdown(
             "<div style='font-size:0.68rem;color:#718096;margin-top:3px;'>"
-            "🔵 등급색: 선택 학교 &nbsp;|&nbsp; "
-            "🔷 남색: Wee센터 &nbsp;|&nbsp; "
-            "🟠 주황: 가장 가까운 Wee센터</div>",
+            "등급색: 선택 학교 &nbsp;|&nbsp; "
+            "남색: Wee센터 &nbsp;|&nbsp; "
+            "주황: 가장 가까운 Wee센터</div>",
             unsafe_allow_html=True,
         )
 
