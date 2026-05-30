@@ -1609,7 +1609,7 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
             st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "133px"),
                         unsafe_allow_html=True)
         # 행 간격
-        st.markdown("<div style='margin:22px 0;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin:23px 0;'></div>", unsafe_allow_html=True)
         # 2x2 그리드 — 2행
         r2c1, r2c2 = st.columns(2, gap="small")
         with r2c1:
