@@ -355,7 +355,7 @@ def render_sidebar(df: pd.DataFrame):
     tabs = [
         "📋 현황 개요", "🗺️ 지역별 분석", "🔍 학교 검색",
         "📊 유형 분석",  "💡 AI 기반 정책 제안",
-        "⚙️ 시뮬레이션",  "📐 자원배치 시나리오", "ℹ️ 데이터 설명",
+        "📐 자원배치 시뮬레이션", "ℹ️ 데이터 설명",
     ]
     selected = sb.radio("메뉴", tabs, label_visibility="collapsed")
 
@@ -426,8 +426,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             "🔍 <b>학교 검색</b>: 개별 학교 진단 및 지표 상세 확인<br>"
             "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
             "💡 <b>AI 기반 정책 제안</b>: 학교별 맞춤 정책 추천<br>"
-            "⚙️ <b>시뮬레이션</b>: 정책 적용 전후 효과 가상 비교<br>"
-            "📐 <b>자원배치 시나리오</b>: 제한된 자원의 최적 배분 제안"
+            "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분"
             "</div></div></div>",
             unsafe_allow_html=True,
         )
@@ -475,11 +474,11 @@ def _render_metric_cards(df: pd.DataFrame, df_all: pd.DataFrame):
     defs = [
         ("분석 대상 학교 수",    f"{n}개교",       f"전체 {n_all}개교 중",
          "🏫", "#EBF2FF", "#2980B9"),
-        ("평균 CSI",             f"{csi:.3f}",      "(0 ~ 1)",
+        ("평균 상담공급지수(CSI)", f"{csi:.3f}",      "0~1 · 높을수록 공급 양호",
          "📋", "#E8F8F5", "#1ABC9C"),
-        ("평균 CDI",             f"{cdi:.3f}",      "(0 ~ 1)",
+        ("평균 상담수요지수(CDI)", f"{cdi:.3f}",      "0~1 · 높을수록 수요 높음",
          "👥", "#FEF9E7", "#F39C12"),
-        ("평균 우선지원점수",    f"{ps:+.3f}",     "CDI − CSI",
+        ("평균 우선지원점수(PS)", f"{ps:+.3f}",      "CDI−CSI · 높을수록 공급 부족",
          "🎯", "#F3E8FF", "#8E44AD"),
         ("지원 시급 학교 수", f"{n_top}개교",  f"({pct_top:.1f}%)",
          "⚠️", "#FDECEA", "#C0392B"),
@@ -532,7 +531,7 @@ def _render_map_section(df: pd.DataFrame):
         ) if has_latlon else 0
 
         if has_latlon and n_valid >= 10:
-            _render_school_pydeck_map(df)
+            _render_school_pydeck_map(df, map_height=460)
             wee_df, wee_msg = _load_wee_centers()
             n_wee = len(wee_df) if wee_df is not None else 0
             n_low_access = int((df["wee_center_access_score"] <= 0.4).sum()) \
@@ -565,7 +564,7 @@ def _render_map_section(df: pd.DataFrame):
 
 
 # ── pydeck 학교 산점도 ─────────────────────────────────────────────────────────
-def _render_school_pydeck_map(df: pd.DataFrame):
+def _render_school_pydeck_map(df: pd.DataFrame, map_height: int = 400):
     try:
         map_cols = [
             "school_name", "sigungu",
@@ -653,7 +652,7 @@ def _render_school_pydeck_map(df: pd.DataFrame):
             tooltip=tooltip if wee_df is None else wee_tooltip,
             map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         )
-        st.pydeck_chart(deck, width="stretch")
+        st.pydeck_chart(deck, width="stretch", height=map_height)
 
     except Exception as e:
         st.warning(f"지도 오류: {e}")
@@ -1009,16 +1008,16 @@ def _render_regional_kpi(agg: pd.DataFrame):
 
     defs = [
         ("분석 대상 시군구 수",     f"{n_sgg}개 시군구",
-         "경남 일반고 학교가 있는 시군구 전수 분석",
+         "경남 일반고<br>전체 시군구 대상",
          "🗺️", "#EBF2FF", "#2980B9"),
         ("상담 수급 불균형 최고 지역",  top_ps_sgg,
-         f"평균 우선지원점수 {top_ps_val:+.3f} — 값이 높을수록 공급 부족 우려",
+         f"평균 우선지원점수 {top_ps_val:+.3f}<br>값이 높을수록 공급 부족 우려",
          "📍", "#FEF9E7", "#F39C12"),
         ("지원이 가장 시급한 유형 최다 지역", top_intv_sgg,
-         f"최우선 개입형 {top_intv_cnt}개교 — 수요·공급 불균형이 뚜렷한 학교",
+         f"최우선 개입형 {top_intv_cnt}개교<br>수요·공급 불균형이 뚜렷한 학교",
          "⚠️", "#FDECEA", "#C0392B"),
         ("상담인력 부족 지역",   top_manp_sgg,
-         f"인력 취약형 {top_manp_cnt}개교 — 전문상담교사 배치 보완 필요",
+         f"인력 취약형 {top_manp_cnt}개교<br>전문상담교사 배치 보완 필요",
          "👥", "#F3E8FF", "#8E44AD"),
     ]
 
@@ -1102,7 +1101,7 @@ def _render_regional_map(agg: pd.DataFrame):
                     lat=wee_df["wee_center_latitude"],
                     lon=wee_df["wee_center_longitude"],
                     mode="markers",
-                    marker=dict(size=14, color="#1A237E", opacity=0.9,
+                    marker=dict(size=7, color="#1A237E", opacity=0.9,
                                 symbol="circle"),
                     text=wee_name + " (" + wee_sgg + ")",
                     hovertemplate="<b>🏢 %{text}</b><extra>Wee센터</extra>",
@@ -2822,7 +2821,7 @@ def show_simulation(df: pd.DataFrame):
     # ── 헤더 ─────────────────────────────────────────────────────────────────
     st.markdown(
         "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 14px 0;font-weight:700;'>"
-        "정책 적용 시뮬레이션"
+        "자원배치 시뮬레이션"
         "</h1>",
         unsafe_allow_html=True,
     )
@@ -2940,18 +2939,7 @@ def show_simulation(df: pd.DataFrame):
         with int_col:
             _render_sim_interpretation(sim_df, target_sel, apply_staff, apply_wee, apply_center, apply_prog)
 
-    # ── AI 기반 우선배치 최적화 (항상 표시) ──────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
-        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
-        "🏆 AI 기반 우선배치 최적화 시뮬레이션</h2>"
-        "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
-        "제한된 상담지원 자원을 어느 학교에 우선 적용할지 자동 추천합니다.</p>",
-        unsafe_allow_html=True,
-    )
-    show_optimization_sim()
-
-    # ── 학교별 시뮬레이션 (항상 표시) ────────────────────────────────────────
+    # ── 학교별 시뮬레이션 ─────────────────────────────────────────────────────
     st.markdown(
         "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
         "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
@@ -2962,6 +2950,18 @@ def show_simulation(df: pd.DataFrame):
         unsafe_allow_html=True,
     )
     _render_school_sim(df)
+
+    # ── PuLP 제약조건 기반 자원배치 ──────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#E2E8F0;margin:28px 0 20px 0;'>"
+        "<h2 style='font-size:1.1rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
+        "📐 제약조건 기반 자원배치 시나리오</h2>"
+        "<p style='color:#718096;font-size:0.77rem;margin:0 0 14px 0;'>"
+        "제한된 자원 조건에서 우선지원점수 개선폭이 큰 학교-정책 조합을 "
+        "0-1 정수계획(PuLP)으로 제안합니다.</p>",
+        unsafe_allow_html=True,
+    )
+    show_pulp_scenario(df)
 
     st.markdown(
         "<div class='footer-note'>"
@@ -3587,9 +3587,7 @@ def show_pulp_scenario(df: pd.DataFrame):
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ── AI 기반 우선배치 최적화 시뮬레이션 함수 ──────────────────────────────────
-# ══════════════════════════════════════════════════════════════════════════════
+# ── (Greedy 기반 최적화 제거됨 — PuLP 기반으로 통합) ─────────────────────────
 
 def _load_opt_data():
     """최적화용 데이터 파일 우선순위 로드."""
@@ -3610,8 +3608,26 @@ def _load_opt_data():
     return None
 
 
-def _run_greedy_opt(df: pd.DataFrame, n_a: int, n_b: int, n_c: int, scope: str):
-    """Greedy Optimization — 정책별 priority_improvement 상위 N개 선택."""
+def _run_greedy_opt(*args, **kwargs):
+    """제거됨 — PuLP로 통합."""
+    return {}
+
+
+def show_optimization_sim(*args, **kwargs):
+    """제거됨 — PuLP로 통합."""
+    pass
+
+
+def _GREEDY_PLACEHOLDER():
+    pass  # Greedy 코드 제거됨
+
+
+def _show_optimization_sim_old():
+    pass  # show_optimization_sim 원본 제거됨 — 아래 원본 내용 삭제
+
+
+def _GREEDY_BODY_START():
+    """marker"""
 
     # 대상 범위 필터
     grp_col = "policy_strategy_group"
@@ -5761,18 +5777,8 @@ def main():
         show_type_analysis(df)
     elif tab_key == "AI 기반 정책 제안":
         show_ai_policy(df)
-    elif tab_key == "시뮬레이션":
+    elif tab_key == "자원배치 시뮬레이션":
         show_simulation(df)
-    elif tab_key == "자원배치 시나리오":
-        st.markdown(
-            "<h1 style='font-size:1.3rem;color:#1E3A5F;margin:0 0 4px 0;font-weight:700;'>"
-            "자원배치 시나리오</h1>"
-            "<p style='color:#718096;font-size:0.78rem;margin:0 0 14px 0;'>"
-            "제한된 상담지원 자원 조건에서 PuLP 0-1 정수계획 최적화로 "
-            "우선지원점수 개선폭이 큰 학교-정책 조합을 제안합니다.</p>",
-            unsafe_allow_html=True,
-        )
-        show_pulp_scenario(df)
     elif tab_key == "데이터 설명":
         show_data_description(df)
     else:
