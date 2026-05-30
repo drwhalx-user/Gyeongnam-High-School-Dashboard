@@ -1558,7 +1558,7 @@ def _render_school_info_card(row: pd.Series, nearest_wee=None, nearest_dist=None
             f"margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #2E5FA3;'>"
             f"🏫 {_v('school_name')}</div>"
             + rows_html + badge_html +
-            "<div style='margin-bottom:6px;'></div>"
+            "<div style='margin-bottom:8px;'></div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -1988,7 +1988,7 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
             "등급색: 선택 학교 &nbsp;|&nbsp; "
             "남색: Wee센터 &nbsp;|&nbsp; "
             "주황: 가장 가까운 Wee센터</div>"
-            "<div style='margin-bottom:9px;'></div>",
+            "<div style='margin-bottom:12px;'></div>",
             unsafe_allow_html=True,
         )
 
