@@ -408,7 +408,7 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
     # 대시보드 소개 카드
     with st.container(border=True):
         st.markdown(
-            "<div style='display:flex;gap:18px;align-items:flex-start;min-height:120px;'>"
+            "<div style='display:flex;gap:18px;align-items:flex-start;min-height:140px;'>"
             "<div style='flex:1;'>"
             "<div style='font-size:0.82rem;font-weight:700;color:#1E3A5F;margin-bottom:6px;'>"
             "📌 이 대시보드는 무엇인가요?</div>"
@@ -425,7 +425,8 @@ def show_overview(df_all: pd.DataFrame, sigungu_f: str, priority_f: str):
             "📊 <b>유형 분석</b>: 수요-공급 유형 분류 및 K-means 군집 분석<br>"
             "🗺️ <b>지역별 분석</b>: 시군구 단위 상담 인프라 비교<br>"
             "🔍 <b>학교 검색</b>: 개별 학교 진단 · 지표 상세 · 맞춤 정책 제안<br>"
-            "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분"
+            "📐 <b>자원배치 시뮬레이션</b>: 정책 효과 비교 · 학교별 시뮬레이션 · 제약조건 기반 최적 자원배분<br>"
+            "ℹ️ <b>데이터 설명</b>: 지표 산출 기준 · 방법론 · 한계 및 유의사항"
             "</div></div></div>",
             unsafe_allow_html=True,
         )
@@ -1556,7 +1557,7 @@ def _render_school_info_card(row: pd.Series, nearest_wee=None, nearest_dist=None
             f"margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #2E5FA3;'>"
             f"🏫 {_v('school_name')}</div>"
             + rows_html + badge_html +
-            "<div style='margin-bottom:4px;'></div>"
+            "<div style='margin-bottom:6px;'></div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -1601,20 +1602,20 @@ def _render_school_kpi_cards(row: pd.Series, df_all: pd.DataFrame):
         # 2x2 그리드 — 1행
         r1c1, r1c2 = st.columns(2, gap="small")
         with r1c1:
-            st.markdown(_card("#1ABC9C", "상담공급점수(CSI)", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "131px"),
+            st.markdown(_card("#1ABC9C", "상담공급점수(CSI)", f"{csi:.3f}", f"경남 평균 {avg_csi:.3f}", "132px"),
                         unsafe_allow_html=True)
         with r1c2:
-            st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "131px"),
+            st.markdown(_card("#E67E22", "상담수요점수(CDI)", f"{cdi:.3f}", f"경남 평균 {avg_cdi:.3f}", "132px"),
                         unsafe_allow_html=True)
         # 행 간격
         st.markdown("<div style='margin:22px 0;'></div>", unsafe_allow_html=True)
         # 2x2 그리드 — 2행
         r2c1, r2c2 = st.columns(2, gap="small")
         with r2c1:
-            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "131px"),
+            st.markdown(_card("#C0392B", "우선지원점수", f"{ps:.3f}", f"경남 평균 {avg_ps:.3f}", "132px"),
                         unsafe_allow_html=True)
         with r2c2:
-            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "131px"),
+            st.markdown(_card(pcolor, "우선지원등급", pdisp, "등급", "132px"),
                         unsafe_allow_html=True)
 
     with sg_col:
@@ -1986,7 +1987,7 @@ def _render_single_school_map(row: pd.Series, height: int = 320):
             "등급색: 선택 학교 &nbsp;|&nbsp; "
             "남색: Wee센터 &nbsp;|&nbsp; "
             "주황: 가장 가까운 Wee센터</div>"
-            "<div style='margin-bottom:6px;'></div>",
+            "<div style='margin-bottom:9px;'></div>",
             unsafe_allow_html=True,
         )
 
