@@ -1,20 +1,20 @@
 ﻿항목,값
 전체 학교 수,146.0
-CDI 평균,0.3731
-CDI 최솟값,0.1036
+CDI 평균,0.3816
+CDI 최솟값,0.1147
 CDI 최댓값,0.6411
-CDI 중앙값,0.4041
+CDI 중앙값,0.406
 CDI 결측 학교 수,0.0
-demand_size_score 평균,0.7507
+demand_size_score 평균,0.7763
 demand_size_score 결측 학교 수,0.0
 counseling_use_score 평균,0.281
 counseling_use_score 결측 학교 수,0.0
 school_violence_risk_score 평균,0.0877
 school_violence_risk_score 결측 학교 수,0.0
-cdi_level=수요 낮음 학교 수,37.0
-cdi_level=수요 낮음 비율(%),25.3
-cdi_level=수요 보통 학교 수,108.0
-cdi_level=수요 보통 비율(%),74.0
+cdi_level=수요 낮음 학교 수,34.0
+cdi_level=수요 낮음 비율(%),23.3
+cdi_level=수요 보통 학교 수,111.0
+cdi_level=수요 보통 비율(%),76.0
 cdi_level=수요 높음 학교 수,1.0
 cdi_level=수요 높음 비율(%),0.7
 cdi_level=수요 매우 높음 학교 수,0.0

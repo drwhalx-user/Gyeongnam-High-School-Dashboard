@@ -1,9 +1,9 @@
 ﻿항목,평균,최솟값,최댓값,결측수
 전체 학교 수,146,,,
 --- demand_size_score ---,,,,
-demand_size_score,0.7507,0.3,1.0,0
-  구간 0.3 (student < 250),,,28개교 (19.2%),
-  구간 0.6 (250 <= student < 500),,,42개교 (28.8%),
+demand_size_score,0.7763,0.3333,1.0,0
+  구간 0.3 (student < 250),,,0개교 (0.0%),
+  구간 0.6 (250 <= student < 500),,,0개교 (0.0%),
   구간 1.0 (student >= 500),,,76개교 (52.1%),
 --- counseling_use_score ---,,,,
 avg_total_counseling_count_3yr,305.2397,0.0,917.0,0
