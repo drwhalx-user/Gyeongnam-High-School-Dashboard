@@ -4634,7 +4634,7 @@ def show_data_description(df: pd.DataFrame):
                 "text-align:center;margin-bottom:10px;'>"
                 "CDI = (수요 규모 + 실제 상담 이용 + 학교폭력 위험) / 3</div>"
                 "<div style='margin-bottom:8px;'><div style='font-size:0.74rem;font-weight:700;color:#E67E22;'>· 수요 규모</div>"
-                "<div style='font-size:0.70rem;color:#718096;padding-left:8px;line-height:1.5;'>학생 수 250↓→0.3 | 250~500→0.6 | 500↑→1.0</div></div>"
+                "<div style='font-size:0.70rem;color:#718096;padding-left:8px;line-height:1.5;'>학생 수 250↓→0.333 | 250~500→0.667 | 500↑→1.0 (3구간 균등 배분)</div></div>"
                 "<div style='margin-bottom:8px;'><div style='font-size:0.74rem;font-weight:700;color:#E67E22;'>· 실제 상담 이용</div>"
                 "<div style='font-size:0.70rem;color:#718096;padding-left:8px;line-height:1.5;'>최근 3개년 학생·학부모 통합 상담 건수 평균 및 학생 수 대비 비율 → Min-Max 정규화 후 평균</div></div>"
                 "<div style='margin-bottom:8px;'><div style='font-size:0.74rem;font-weight:700;color:#E67E22;'>· 학교폭력 위험</div>"
@@ -4837,7 +4837,7 @@ def show_data_description(df: pd.DataFrame):
             ("wee_class_score",               "Wee클래스 운영 점수", "Wee클래스 운영 여부 (0/1)",              "CSI 구성", "1.0=운영"),
             ("wee_center_access_score",        "Wee센터 접근성 점수", "학교↔Wee센터 직선거리 기반",             "CSI 구성", "높을수록 접근 용이"),
             ("CSI",                            "상담공급지수",         "위 3개 점수 평균",                        "최종 지수", "높을수록 공급 양호"),
-            ("demand_size_score",              "수요 규모 점수",       "학생 수 구간 기반 잠재 수요",             "CDI 구성", "높을수록 잠재 수요 큼"),
+            ("demand_size_score",              "수요 규모 점수",       "학생 수 구간 기반 잠재 수요 (균등 3구간)",             "CDI 구성", "높을수록 잠재 수요 큼"),
             ("counseling_use_score",           "상담 이용률 점수",     "3개년 상담 건수 및 학생 대비 비율",       "CDI 구성", "높을수록 실제 이용 활발"),
             ("school_violence_risk_score",     "학교폭력 위험 점수",   "2023~2025 피해 응답률 평균 정규화",       "CDI 구성", "높을수록 위험 수준 높음"),
             ("CDI",                            "상담수요지수",         "위 3개 점수 평균",                        "최종 지수", "높을수록 수요 높음"),
