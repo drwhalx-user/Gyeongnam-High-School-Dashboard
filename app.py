@@ -321,7 +321,7 @@ def generate_rule_based_optimization_briefing(summary: dict) -> str:
 
 # ── 4. 데이터 로드 ─────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner="데이터를 불러오는 중...")
-def load_data(path: pathlib.Path, sheet: str) -> pd.DataFrame:
+def load_data(path: pathlib.Path, sheet: str, mtime: float = 0) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=sheet, dtype={"school_code": str})
 
 
@@ -2106,7 +2106,8 @@ _KMEANS_INTERP = {
 }
 
 
-def _load_kmeans_data():
+@st.cache_data(show_spinner=False)
+def _load_kmeans_data(mtime: float = 0):
     if not _KMEANS_PATH.exists():
         return None, str(_KMEANS_PATH)
     try:
@@ -2128,7 +2129,7 @@ def _render_kmeans_section():
         unsafe_allow_html=True,
     )
 
-    km_df, err_msg = _load_kmeans_data()
+    km_df, err_msg = _load_kmeans_data(mtime=_KMEANS_PATH.stat().st_mtime if _KMEANS_PATH.exists() else 0)
 
     if km_df is None:
         st.warning(f"K-means 파일을 불러올 수 없습니다.\n\n확인 경로: `{err_msg}`")
@@ -5463,7 +5464,7 @@ def main():
             f"입력 파일을 찾을 수 없습니다.\n\n경로: `{DATA_PATH}`")
         st.stop()
 
-    df = load_data(DATA_PATH, SHEET).copy()
+    df = load_data(DATA_PATH, SHEET, mtime=DATA_PATH.stat().st_mtime).copy()
     df["priority_display"] = (
         df["priority_level"].map(PRIORITY_DISPLAY).fillna(df["priority_level"])
     )
